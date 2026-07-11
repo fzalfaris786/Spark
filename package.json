@@ -1,0 +1,13 @@
+{
+  "name": "sparkle-public-bot",
+  "version": "1.0.0",
+  "description": "Advanced Public Management Bot",
+  "main": "Index.js",
+  "scripts": {
+    "start": "node Index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "mongoose": "^8.0.0"
+  }
+}
