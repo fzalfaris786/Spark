@@ -6,11 +6,11 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName("giveaway")
         .setDescription("Start a giveaway")
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Admin Only
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addChannelOption(o => o.setName("channel").setDescription("Giveaway channel").setRequired(true))
         .addStringOption(o => o.setName("reward").setDescription("Prize / Reward").setRequired(true))
         .addIntegerOption(o => o.setName("winners").setDescription("Number of winners").setRequired(true))
-        .addStringOption(o => o.setName("time").setDescription("Example: 1m / 1h / 1d").setRequired(true)),
+        .addStringOption(o => o.setName("time").setDescription("Time in seconds (e.g. 60) or format (1m / 1h)").setRequired(true)),
 
     async execute(interaction) {
         try {
@@ -50,7 +50,7 @@ module.exports = {
                 endGiveaway(msg.id, interaction.client);
             }, ms);
 
-            return interaction.reply({ content: "✅ Giveaway started!", ephemeral: true });
+            return interaction.reply({ content: "✅ Giveaway started successfully!", ephemeral: true });
         } catch (err) {
             console.error(err);
             return interaction.reply({ content: "❌ Something went wrong in giveaway", ephemeral: true });
@@ -109,10 +109,16 @@ ${winnersList.length ? winnersList.map(u => `▸ ${u}`).join("\n") : "▸ No val
 
 function parseTime(t) {
     if (!t || typeof t !== "string") return 60000;
+    
+    // IF JUST A NUMBER (e.g., 60), Treat as SECONDS
+    if (!isNaN(t)) return parseInt(t) * 1000;
+
     const num = parseInt(t);
     if (isNaN(num)) return 60000;
+
     if (t.includes("m")) return num * 60000;
     if (t.includes("h")) return num * 3600000;
     if (t.includes("d")) return num * 86400000;
+    if (t.includes("s")) return num * 1000;
     return 60000;
 }
