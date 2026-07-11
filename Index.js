@@ -56,7 +56,7 @@ client.on('guildMemberAdd', async (member) => {
     if (channel) {
         const embed = new EmbedBuilder()
             .setTitle(config.welcomeTitle || 'Welcome!')
-            .setDescription(config.welcomeMessage.replace(/{user}/g, `${member}`))
+            .setDescription(config.welcomeMessage.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`))
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true })) // Notes matching constraint (Always right side)
             .setColor('#00ffcc');
 
