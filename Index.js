@@ -49,23 +49,36 @@ client.once('ready', async () => {
 
 // ================= WELCOME HANDLER EVENT =================
 client.on('guildMemberAdd', async (member) => {
-    const config = await GuildConfig.findOne({ guildId: member.guild.id });
-    if (!config || !config.welcomeChannel) return;
+    try {
+        const config = await GuildConfig.findOne({ guildId: member.guild.id });
+        if (!config || !config.welcomeChannel) return;
 
-    const channel = member.guild.channels.cache.get(config.welcomeChannel);
-    if (channel) {
-        const embed = new EmbedBuilder()
-            .setTitle(config.welcomeTitle || 'Welcome!')
-            .setDescription(config.welcomeMessage.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`))
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true })) // Notes matching constraint (Always right side)
-            .setColor('#00ffcc');
+        const channel = member.guild.channels.cache.get(config.welcomeChannel);
+        if (channel) {
+            let descText = config.welcomeMessage || 'Welcome!';
+            descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
 
-        if (config.welcomeThumbnail) embed.setImage(config.welcomeThumbnail);
-        await channel.send({ embeds: [embed] });
-    }
+            const embed = new EmbedBuilder()
+                .setTitle(config.welcomeTitle || 'Welcome!')
+                .setDescription(descText)
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setColor('#00ffcc');
 
-    if (config.welcomeDm) {
-        try { await member.send(config.welcomeDm); } catch (e) {}
+            if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) {
+                embed.setImage(config.welcomeThumbnail);
+            }
+
+            await channel.send({ embeds: [embed] });
+        }
+
+        if (config.welcomeDm) {
+            try { 
+                let dmText = config.welcomeDm.replace(/{user}/g, `${member.user.username}`);
+                await member.send(dmText); 
+            } catch (e) { console.log("Can't DM user"); }
+        }
+    } catch (err) {
+        console.error("Welcome Event Error: ", err);
     }
 });
 
@@ -85,10 +98,10 @@ client.on('interactionCreate', async (interaction) => {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message Content ({user} for tags)').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message Content ({user}, {memberCount})').setRequired(true).setStyle(TextInputStyle.Paragraph)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner/Image URL (Optional)').setRequired(false).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text on Join (Optional)').setRequired(false).setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text on Join (Optional)').setRequired(false).setStyle(TextInputStyle.Paragraph))
             );
             return await interaction.showModal(modal);
         }
@@ -123,45 +136,58 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
+        // Safe defer processing to avoid modal crashing timeout bounds
+        await interaction.deferReply({ ephemeral: true });
+
         if (interaction.customId === 'modal_welcome') {
-            await GuildConfig.findOneAndUpdate(
-                { guildId },
-                {
-                    welcomeTitle: interaction.fields.getTextInputValue('w_title'),
-                    welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
-                    welcomeChannel: interaction.fields.getTextInputValue('w_chan'),
-                    welcomeThumbnail: interaction.fields.getTextInputValue('w_thumb'),
-                    welcomeDm: interaction.fields.getTextInputValue('w_dm')
-                },
-                { upsert: true, new: true }
-            );
-            return await interaction.reply({ content: '✅ Welcome configurations successfully saved to Database!', ephemeral: true });
+            try {
+                await GuildConfig.findOneAndUpdate(
+                    { guildId },
+                    {
+                        welcomeTitle: interaction.fields.getTextInputValue('w_title'),
+                        welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
+                        welcomeChannel: interaction.fields.getTextInputValue('w_chan'),
+                        welcomeThumbnail: interaction.fields.getTextInputValue('w_thumb') || '',
+                        welcomeDm: interaction.fields.getTextInputValue('w_dm') || ''
+                    },
+                    { upsert: true, new: true }
+                );
+                return await interaction.editReply({ content: '✅ Welcome configurations successfully saved to Database!' });
+            } catch (err) {
+                console.error(err);
+                return await interaction.editReply({ content: '❌ Failed to save setup configuration data.' });
+            }
         }
 
         if (interaction.customId === 'modal_ticket') {
-            const categories = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.strip ? c.strip() : c.trim());
-            const config = await GuildConfig.findOneAndUpdate(
-                { guildId },
-                {
-                    ticketDescription: interaction.fields.getTextInputValue('t_desc'),
-                    ticketParent: interaction.fields.getTextInputValue('t_parent'),
-                    ticketLogs: interaction.fields.getTextInputValue('t_logs'),
-                    ticketMessage: interaction.fields.getTextInputValue('t_msg')
-                },
-                { upsert: true, new: true }
-            );
+            try {
+                const categories = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
+                const config = await GuildConfig.findOneAndUpdate(
+                    { guildId },
+                    {
+                        ticketDescription: interaction.fields.getTextInputValue('t_desc'),
+                        ticketParent: interaction.fields.getTextInputValue('t_parent'),
+                        ticketLogs: interaction.fields.getTextInputValue('t_logs'),
+                        ticketMessage: interaction.fields.getTextInputValue('t_msg')
+                    },
+                    { upsert: true, new: true }
+                );
 
-            const embed = new EmbedBuilder()
-                .setTitle('🎫 Create a Support Ticket')
-                .setDescription(config.ticketDescription)
-                .setColor('#5865F2');
+                const embed = new EmbedBuilder()
+                    .setTitle('🎫 Create a Support Ticket')
+                    .setDescription(config.ticketDescription)
+                    .setColor('#5865F2');
 
-            const options = categories.map(cat => ({ label: cat, value: cat, description: `Open ticket for ${cat}` }));
-            const selectMenu = new StringSelectMenuBuilder().setCustomId('ticket_select').setPlaceholder('Choose a topic...').addOptions(options);
-            const row = new ActionRowBuilder().addComponents(selectMenu);
+                const options = categories.map(cat => ({ label: cat, value: cat, description: `Open ticket for ${cat}` }));
+                const selectMenu = new StringSelectMenuBuilder().setCustomId('ticket_select').setPlaceholder('Choose a topic...').addOptions(options);
+                const row = new ActionRowBuilder().addComponents(selectMenu);
 
-            await interaction.reply({ content: '✅ Ticket Panel deployed below!', ephemeral: true });
-            return await interaction.channel.send({ embeds: [embed], components: [row] });
+                await interaction.channel.send({ embeds: [embed], components: [row] });
+                return await interaction.editReply({ content: '✅ Ticket Panel deployed below!' });
+            } catch (err) {
+                console.error(err);
+                return await interaction.editReply({ content: '❌ Failed to process ticket data.' });
+            }
         }
     }
 
@@ -201,3 +227,4 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+                                               
