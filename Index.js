@@ -232,11 +232,11 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ================= GLOBAL BACKGROUND STATS ENGINE =================
-const GuildConfig = require('./models/GuildConfig');
+// Note: Variable dobara declare nahi kiya hai taaki crash na ho
 
 setInterval(async () => {
     try {
-        // Database se un saare servers ki list nikalo jinhone stats setup kiya hai
+        // GuildConfig variable upar pehle se declared hai, isliye direct use kar rahe hain
         const configs = await GuildConfig.find({ 
             totalMembersChan: { $ne: null }, 
             onlinePlayersChan: { $ne: null } 
@@ -248,7 +248,7 @@ setInterval(async () => {
 
             const totalMembers = guild.memberCount;
             
-            // Online players fetch karne ke liye presences lazmi hain
+            // Online players presence dynamic fetch
             const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
             const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
 
@@ -268,8 +268,5 @@ setInterval(async () => {
         console.error("Background Stats Engine Error:", err);
     }
 }, 600000); // Har 10 minute mein auto-update loop chalaega
-
-// client.login(process.env.TOKEN); <-- IS LINE KE THEEK UPAR PASTE KARNA HAI
-
 
 client.login(process.env.DISCORD_TOKEN);
