@@ -134,7 +134,7 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // 📺 YOUTUBE SETUP MODAL OPENER (🌟 FIXED INTERACTION)
+        // 📺 YOUTUBE SETUP MODAL OPENER
         if (interaction.customId === 'setup_youtube_btn') {
             const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
             modal.addComponents(
@@ -267,7 +267,6 @@ client.on('interactionCreate', async (interaction) => {
                     { upsert: true, new: true }
                 );
 
-                // Setup hotte hi channel names instant sync ho jayein
                 await chan1.setName(`🪐 Total Members: ${interaction.guild.memberCount}`).catch(() => null);
                 const mems = await interaction.guild.members.fetch({ withPresences: true }).catch(() => null);
                 const onPlayers = mems ? mems.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
@@ -280,7 +279,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 📺 YOUTUBE FORM SUBMIT (🌟 FIXED INTERACTION)
+        // 📺 YOUTUBE FORM SUBMIT
         if (interaction.customId === 'youtube_modal_submit') {
             try {
                 const ytChannelId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
@@ -351,4 +350,7 @@ setInterval(async () => {
             if (!guild) continue;
             
             const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
-            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.stat
+            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
+
+            if (config.onlinePlayersChan) {
+                const chan = guild.channels.
