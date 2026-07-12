@@ -45,7 +45,6 @@ client.on('guildMemberAdd', async (member) => {
                 let descText = config.welcomeMessage || 'Welcome!';
                 descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
                 
-                // 🌟 FIXED: Added dynamic member avatar thumbnail here
                 const embed = new EmbedBuilder()
                     .setTitle(config.welcomeTitle || 'Welcome!')
                     .setDescription(descText)
@@ -106,7 +105,7 @@ client.on('interactionCreate', async (interaction) => {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Categories (Comma separated)').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Category ID').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message || Banner URL').setRequired(true).setStyle(TextInputStyle.Paragraph))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message').setRequired(true).setStyle(TextInputStyle.Paragraph))
             );
             return await interaction.showModal(modal);
         }
@@ -162,24 +161,40 @@ client.on('interactionCreate', async (interaction) => {
             }, { upsert: true });
             return await interaction.editReply({ content: '✅ Saved Welcome!' });
         }
+        
+        // ================= TICKET MODAL SUBMIT =================
         if (interaction.customId === 'modal_ticket') {
             const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
-            const msgData = interaction.fields.getTextInputValue('t_msg').split('||');
             const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
-            const config = await GuildConfig.findOneAndUpdate({ guildId }, {
-                ticketDescription: interaction.fields.getTextInputValue('t_desc'),
+            
+            // Extract description and banner image via double pipe separator
+            const descData = interaction.fields.getTextInputValue('t_desc').split('||');
+            const panelDescription = descData[0]?.trim();
+            const panelImage = descData[1]?.trim() || '';
+
+            await GuildConfig.findOneAndUpdate({ guildId }, {
+                ticketDescription: panelDescription,
                 ticketParent: interaction.fields.getTextInputValue('t_parent'),
                 ticketLogs: logsData[0]?.trim(),
                 ticketRole: logsData[1]?.trim(),
-                ticketMessage: msgData[0]?.trim(),
-                ticketImage: msgData[1]?.trim() || ''
+                ticketMessage: interaction.fields.getTextInputValue('t_msg').trim()
             }, { upsert: true, new: true });
-            const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(config.ticketDescription).setColor('#5865F2');
+
+            const embed = new EmbedBuilder()
+                .setTitle('🎫 Create a Ticket')
+                .setDescription(panelDescription)
+                .setColor('#5865F2');
+
+            if (panelImage && panelImage.startsWith('http')) {
+                embed.setImage(panelImage);
+            }
+
             const options = cats.map(cat => ({ label: cat, value: cat }));
             const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
             await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
             return await interaction.editReply({ content: '✅ Deployed Tickets!' });
         }
+        
         if (interaction.customId === 'modal_stats_setup') {
             const tId = interaction.fields.getTextInputValue('stats_total_input').trim();
             const oId = interaction.fields.getTextInputValue('stats_online_input').trim();
@@ -195,11 +210,11 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-        if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
+    // ================= TICKET CHANNEL SELECT INITIATION =================
+    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
         if (!config) return;
         
-        // Konsi category select ki hai usko variable me liya
         const selectedCategory = interaction.values[0]; 
         const name = `ticket-${interaction.user.username.toLowerCase()}`;
         
@@ -209,7 +224,6 @@ client.on('interactionCreate', async (interaction) => {
         
         await interaction.deferReply({ ephemeral: true });
         
-        // Ticket Channel Create Logic
         const ch = await interaction.guild.channels.create({
             name, 
             parent: config.ticketParent || null,
@@ -220,30 +234,21 @@ client.on('interactionCreate', async (interaction) => {
             ]
         });
 
-        // User variables replace karne ke liye
-        let finalMessage = config.ticketMessage || 'Thank you for creating a ticket.';
-        finalMessage = finalMessage
+        let parsedMessage = config.ticketMessage || 'Thank you for contacting support.';
+        parsedMessage = parsedMessage
             .replace(/{user}/g, `${interaction.user}`)
             .replace(/{{User.Mention}}/g, `${interaction.user}`);
 
-        // Staff Role to ping inside the text
         if (config.ticketRole) {
-            finalMessage = `${finalMessage}\n\n🔔 **Staff Ping:** <@&${config.ticketRole}>`;
+            parsedMessage = `${parsedMessage}\n\n🔔 **Staff Notification:** <@&${config.ticketRole}>`;
         }
 
-        // Final Embed with Selected Category Field
         const embed = new EmbedBuilder()
             .setTitle('🎫 Ticket Support Terminal')
-            .setDescription(finalMessage)
-            .addFields({ name: '🗂️ Selected Category', value: `\`${selectedCategory}\``, inline: false })
+            .setDescription(parsedMessage)
+            .addFields({ name: '🗂️ Category', value: `\`${selectedCategory}\``, inline: false })
             .setColor('#00ffcc');
 
-        // Banner URL image rendering logic
-        if (config.ticketImage && config.ticketImage.startsWith('http')) {
-            embed.setImage(config.ticketImage);
-        }
-
-        // Claim and Close Buttons
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), 
             new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
@@ -251,8 +256,7 @@ client.on('interactionCreate', async (interaction) => {
 
         await ch.send({ embeds: [embed], components: [row] });
         await interaction.editReply({ content: `Generated your ticket room: ${ch}` });
-        }
-    
+    }
 });
 
 // ================= TIMED LIVE REFRESH LOOP =================
@@ -294,4 +298,4 @@ setInterval(async () => {
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
-                                                                                                                                                              
+                
