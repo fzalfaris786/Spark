@@ -6,7 +6,6 @@ const Parser = require('rss-parser');
 const GuildConfig = require('./models/GuildConfig');
 
 const parser = new Parser();
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -19,11 +18,9 @@ const client = new Client({
 
 client.commands = new Collection();
 const commandsArray = [];
-
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
-    const command = require(path.join(commandsPath, file));
+    const command = require(path.join(__dirname, 'commands', file));
     client.commands.set(command.data.name, command);
     commandsArray.push(command.data.toJSON());
 }
@@ -41,27 +38,15 @@ client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
         if (!config) return;
-
         if (config.welcomeChannel) {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
                 descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
-
-                const embed = new EmbedBuilder()
-                    .setTitle(config.welcomeTitle || 'Welcome!')
-                    .setDescription(descText)
-                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                    .setColor('#00ffcc');
-
-                if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) embed.setImage(config.welcomeThumbnail);
-                await channel.send({ embeds: [embed] });
+                const embed = new EmbedBuilder().setTitle(config.welcomeTitle || 'Welcome!').setDescription(descText).setColor('#00ffcc');
+                await channel.send({ embeds: [embed] }).catch(() => null);
             }
         }
-        if (config.welcomeDm) {
-            try { await member.send(config.welcomeDm); } catch (e) {}
-        }
-
         if (config.totalMembersChan) {
             const chan = member.guild.channels.cache.get(config.totalMembersChan);
             if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
@@ -72,10 +57,10 @@ client.on('guildMemberAdd', async (member) => {
 client.on('guildMemberRemove', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
-        if (!config || !config.totalMembersChan) return;
-
-        const chan = member.guild.channels.cache.get(config.totalMembersChan);
-        if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
+        if (config && config.totalMembersChan) {
+            const chan = member.guild.channels.cache.get(config.totalMembersChan);
+            if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
+        }
     } catch (err) { console.error(err); }
 });
 
@@ -85,89 +70,68 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
-        if (!command) return;
-        try { await command.execute(interaction); } catch (e) { console.error(e); }
+        if (command) try { await command.execute(interaction); } catch (e) { console.error(e); }
     }
 
     if (interaction.isButton()) {
         const config = await GuildConfig.findOne({ guildId });
-
-        if (interaction.customId === 'btn_welcome_setup' || interaction.customId === 'setup_welcome_btn') {
+        if (interaction.customId === 'setup_welcome_btn') {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message ({user}, {memberCount})').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message').setRequired(true).setStyle(TextInputStyle.Paragraph)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner Image URL (Optional)').setRequired(false).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text on Join (Optional)').setRequired(false).setStyle(TextInputStyle.Paragraph))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner Image URL').setRequired(false).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text').setRequired(false).setStyle(TextInputStyle.Paragraph))
             );
             return await interaction.showModal(modal);
         }
-
-        if (interaction.customId === 'btn_ticket_setup' || interaction.customId === 'setup_tickets_btn') {
+        if (interaction.customId === 'setup_tickets_btn') {
             const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Panel Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Dropdown (Support, Billing)').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Ticket Category Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('Logs Channel ID & Staff Role ID (Comma)').setPlaceholder('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Message Inside & Optional Banner URL').setPlaceholder('Welcome Message || Image URL').setRequired(true).setStyle(TextInputStyle.Paragraph))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Categories (Comma separated)').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Category ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message || Banner URL').setRequired(true).setStyle(TextInputStyle.Paragraph))
             );
             return await interaction.showModal(modal);
         }
-
         if (interaction.customId === 'setup_stats_btn') {
             const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Voice Channel ID').setPlaceholder('Paste total channel ID here...').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Voice Channel ID').setPlaceholder('Paste online channel ID here...').setRequired(true).setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Voice ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Voice ID').setRequired(true).setStyle(TextInputStyle.Short))
             );
             return await interaction.showModal(modal);
         }
-
         if (interaction.customId === 'setup_youtube_btn') {
             const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID').setPlaceholder('Paste your YouTube Channel ID...').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Stream Alert Channel ID').setPlaceholder('Channel ID for Live alerts...').setRequired(true).setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Uploads Alert Channel ID').setPlaceholder('Channel ID for Video Upload alerts...').setRequired(true).setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Upload Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
             );
             return await interaction.showModal(modal);
         }
-
         if (interaction.customId === 'claim_ticket' || interaction.customId === 'close_ticket') {
             if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
-                return await interaction.reply({ content: '❌ Only designated Staff can manage this ticket.', ephemeral: true });
+                return await interaction.reply({ content: '❌ Staff only.', ephemeral: true });
             }
         }
-
         if (interaction.customId === 'claim_ticket') {
             await interaction.reply({ content: `🔒 Ticket claimed by ${interaction.user}` });
-            interaction.component.setDisabled(true);
             return await interaction.message.edit({ components: [interaction.message.components[0]] });
         }
-
         if (interaction.customId === 'close_ticket') {
-            await interaction.reply('🔒 Generating transcript and cleaning up in 5 seconds...');
-            
-            const fetchedMessages = await interaction.channel.messages.fetch({ limit: 100 });
-            let transcriptText = `--- TICKET TRANSCRIPT FOR #${interaction.channel.name} ---\n\n`;
-            
-            [...fetchedMessages.values()].reverse().forEach(msg => {
-                transcriptText += `[${msg.createdAt.toLocaleString()}] ${msg.author.tag}: ${msg.content}\n`;
-            });
-
-            const buffer = Buffer.from(transcriptText, 'utf-8');
-            const attachment = new AttachmentBuilder(buffer, { name: `${interaction.channel.name}-transcript.txt` });
-
+            await interaction.reply('🔒 Closing channel in 5 seconds...');
+            const fetched = await interaction.channel.messages.fetch({ limit: 100 });
+            let txt = '';
+            [...fetched.values()].reverse().forEach(m => { txt += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`; });
+            const attachment = new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: 'transcript.txt' });
             if (config && config.ticketLogs) {
-                const logChan = interaction.guild.channels.cache.get(config.ticketLogs);
-                if (logChan) {
-                    await logChan.send({ 
-                        content: `🗑️ Ticket \`${interaction.channel.name}\` permanently closed by ${interaction.user.tag}. Logs attached below.`,
-                        files: [attachment] 
-                    });
-                }
+                const c = interaction.guild.channels.cache.get(config.ticketLogs);
+                if (c) await c.send({ content: `🗑️ Closed by ${interaction.user.tag}`, files: [attachment] }).catch(() => null);
             }
             setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
         }
@@ -175,185 +139,106 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isModalSubmit()) {
         await interaction.deferReply({ ephemeral: true });
-
         if (interaction.customId === 'modal_welcome') {
-            await GuildConfig.findOneAndUpdate(
-                { guildId },
-                {
-                    welcomeTitle: interaction.fields.getTextInputValue('w_title'),
-                    welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
-                    welcomeChannel: interaction.fields.getTextInputValue('w_chan'),
-                    welcomeThumbnail: interaction.fields.getTextInputValue('w_thumb') || '',
-                    welcomeDm: interaction.fields.getTextInputValue('w_dm') || ''
-                },
-                { upsert: true, new: true }
-            );
-            return await interaction.editReply({ content: '✅ Welcome configurations successfully saved!' });
+            await GuildConfig.findOneAndUpdate({ guildId }, {
+                welcomeTitle: interaction.fields.getTextInputValue('w_title'),
+                welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
+                welcomeChannel: interaction.fields.getTextInputValue('w_chan'),
+                welcomeThumbnail: interaction.fields.getTextInputValue('w_thumb') || '',
+                welcomeDm: interaction.fields.getTextInputValue('w_dm') || ''
+            }, { upsert: true });
+            return await interaction.editReply({ content: '✅ Saved Welcome!' });
         }
-
         if (interaction.customId === 'modal_ticket') {
-            try {
-                const rawLogsRole = interaction.fields.getTextInputValue('t_logs').split(',');
-                const logsId = rawLogsRole[0]?.trim();
-                const roleId = rawLogsRole[1]?.trim();
-
-                const rawMsgImg = interaction.fields.getTextInputValue('t_msg').split('||');
-                const mainMsg = rawMsgImg[0]?.trim();
-                const imgBanner = rawMsgImg[1]?.trim() || '';
-
-                const categories = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
-                
-                const config = await GuildConfig.findOneAndUpdate(
-                    { guildId },
-                    {
-                        ticketDescription: interaction.fields.getTextInputValue('t_desc'),
-                        ticketParent: interaction.fields.getTextInputValue('t_parent'),
-                        ticketLogs: logsId,
-                        ticketRole: roleId,
-                        ticketMessage: mainMsg,
-                        ticketImage: imgBanner
-                    },
-                    { upsert: true, new: true }
-                );
-
-                const embed = new EmbedBuilder()
-                    .setTitle('🎫 Create a Support Ticket')
-                    .setDescription(config.ticketDescription)
-                    .setColor('#5865F2');
-
-                if (config.ticketImage && config.ticketImage.startsWith('http')) embed.setImage(config.ticketImage);
-
-                const options = categories.map(cat => ({ label: cat, value: cat, description: `Open ticket for ${cat}` }));
-                const selectMenu = new StringSelectMenuBuilder().setCustomId('ticket_select').setPlaceholder('Choose a topic...').addOptions(options);
-                const row = new ActionRowBuilder().addComponents(selectMenu);
-
-                await interaction.channel.send({ embeds: [embed], components: [row] });
-                return await interaction.editReply({ content: '✅ Advanced Ticket Panel deployed!' });
-            } catch (e) {
-                console.error(e);
-                return await interaction.editReply({ content: '❌ Input parse processing error.' });
-            }
+            const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
+            const msgData = interaction.fields.getTextInputValue('t_msg').split('||');
+            const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
+            const config = await GuildConfig.findOneAndUpdate({ guildId }, {
+                ticketDescription: interaction.fields.getTextInputValue('t_desc'),
+                ticketParent: interaction.fields.getTextInputValue('t_parent'),
+                ticketLogs: logsData[0]?.trim(),
+                ticketRole: logsData[1]?.trim(),
+                ticketMessage: msgData[0]?.trim(),
+                ticketImage: msgData[1]?.trim() || ''
+            }, { upsert: true, new: true });
+            const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(config.ticketDescription).setColor('#5865F2');
+            const options = cats.map(cat => ({ label: cat, value: cat }));
+            const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
+            await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
+            return await interaction.editReply({ content: '✅ Deployed Tickets!' });
         }
-
         if (interaction.customId === 'modal_stats_setup') {
-            try {
-                const totalChanId = interaction.fields.getTextInputValue('stats_total_input').trim();
-                const onlineChanId = interaction.fields.getTextInputValue('stats_online_input').trim();
-
-                const chan1 = interaction.guild.channels.cache.get(totalChanId);
-                const chan2 = interaction.guild.channels.cache.get(onlineChanId);
-
-                if (!chan1 || !chan2 || chan1.type !== 2 || chan2.type !== 2) {
-                    return await interaction.editReply({ content: '❌ **Setup Failed:** Dono IDs valid **Voice Channels** ki honi chahiye aur isi server ki honi chahiye!' });
-                }
-
-                await GuildConfig.findOneAndUpdate(
-                    { guildId },
-                    { totalMembersChan: totalChanId, onlinePlayersChan: onlineChanId },
-                    { upsert: true, new: true }
-                );
-
-                await chan1.setName(`🪐 Total Members: ${interaction.guild.memberCount}`).catch(() => null);
-                const mems = await interaction.guild.members.fetch({ withPresences: true }).catch(() => null);
-                const onPlayers = mems ? mems.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
-                await chan2.setName(`🟢 Online Players: ${onPlayers}`).catch(() => null);
-
-                return await interaction.editReply({ content: `✅ **Server Stats Configuration Saved!**\n🪐 Total Channel: <#${totalChanId}>\n🟢 Online Channel: <#${onlineChanId}>` });
-            } catch (err) {
-                console.error(err);
-                return await interaction.editReply({ content: '❌ Something went wrong while saving stats config.' });
-            }
+            const tId = interaction.fields.getTextInputValue('stats_total_input').trim();
+            const oId = interaction.fields.getTextInputValue('stats_online_input').trim();
+            await GuildConfig.findOneAndUpdate({ guildId }, { totalMembersChan: tId, onlinePlayersChan: oId }, { upsert: true });
+            return await interaction.editReply({ content: '✅ Saved Stats!' });
         }
-
         if (interaction.customId === 'youtube_modal_submit') {
-            try {
-                const ytChannelId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
-                const liveChanId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
-                const uploadChanId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
-
-                const checkLiveChan = interaction.guild.channels.cache.get(liveChanId);
-                const checkUploadChan = interaction.guild.channels.cache.get(uploadChanId);
-
-                if (!checkLiveChan || !checkUploadChan) {
-                    return await interaction.editReply({ content: '❌ **Setup Failed:** Alert channels must be valid text channels within this server!' });
-                }
-
-                await GuildConfig.findOneAndUpdate(
-                    { guildId },
-                    { ytChannelId, ytLiveChannel: liveChanId, ytUploadChannel: uploadChanId },
-                    { upsert: true, new: true }
-                );
-
-                return await interaction.editReply({
-                    content: `✅ **YouTube Notification Tracker Connected!**\n📺 Channel ID: \`${ytChannelId}\`\n🎥 Live Alerts: <#${liveChanId}>\n🎬 Upload Alerts: <#${uploadChanId}>`
-                });
-            } catch (err) {
-                console.error(err);
-                return await interaction.editReply({ content: '❌ Something went wrong while saving YouTube config.' });
-            }
+            const ytId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
+            const lId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
+            const uId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
+            await GuildConfig.findOneAndUpdate({ guildId }, { ytChannelId: ytId, ytLiveChannel: lId, ytUploadChannel: uId }, { upsert: true });
+            return await interaction.editReply({ content: '✅ Connected YouTube!' });
         }
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
         if (!config) return;
-
-        const channelName = `ticket-${interaction.user.username.toLowerCase()}`;
-        const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
-        if (existingChannel) return await interaction.reply({ content: '❌ Aapki ek ticket pehle se active hai!', ephemeral: true });
-
+        const name = `ticket-${interaction.user.username.toLowerCase()}`;
+        if (interaction.guild.channels.cache.find(c => c.name === name)) return await interaction.reply({ content: '❌ Ticket active.', ephemeral: true });
         await interaction.deferReply({ ephemeral: true });
-
-        const ticketChannel = await interaction.guild.channels.create({
-            name: channelName,
-            parent: config.ticketParent || null,
+        const ch = await interaction.guild.channels.create({
+            name, parent: config.ticketParent || null,
             permissionOverwrites: [
                 { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
                 { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
                 ...(config.ticketRole ? [{ id: config.ticketRole, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : [])
             ]
         });
-
-        const embed = new EmbedBuilder().setTitle('Ticket Panel Initialized').setDescription(config.ticketMessage).setColor('#00ffcc');
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
-        );
-
-        await ticketChannel.send({ embeds: [embed], components: [row] });
-        await interaction.editReply({ content: `Ticket channel has been generated: ${ticketChannel}` });
+        const embed = new EmbedBuilder().setTitle('Ticket Panel').setDescription(config.ticketMessage).setColor('#00ffcc');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
+        await ch.send({ embeds: [embed], components: [row] });
+        await interaction.editReply({ content: `Generated: ${ch}` });
     }
 });
 
 setInterval(async () => {
     try {
-        const statsConfigs = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
-        for (const config of statsConfigs) {
-            const guild = await client.guilds.fetch(config.guildId).catch(() => null);
-            if (!guild) continue;
-            
-            const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
-            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
-
+        const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
+        for (const config of stats) {
+            const g = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!g) continue;
+            const mems = await g.members.fetch({ withPresences: true }).catch(() => null);
+            const on = mems ? mems.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
             if (config.onlinePlayersChan) {
-                const chan = guild.channels.cache.get(config.onlinePlayersChan);
-                if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
+                const chan = g.channels.cache.get(config.onlinePlayersChan);
+                if (chan) await chan.setName(`🟢 Online Players: ${on}`).catch(() => null);
             }
         }
-
-        const ytConfigs = await GuildConfig.find({ ytChannelId: { $ne: null } });
-        for (const config of ytConfigs) {
+        const yts = await GuildConfig.find({ ytChannelId: { $ne: null } });
+        for (const config of yts) {
             const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
             if (!feed || !feed.items || feed.items.length === 0) continue;
-
-            const latestVideo = feed.items[0];
-            const videoId = latestVideo.id.replace('yt:video:', '');
-            const videoLink = latestVideo.link;
-            const videoTitle = latestVideo.title;
-
-            if (config.ytLastVideoId === videoId) continue;
-
-            config.ytLastVideoId = videoId;
+            const item = feed.items[0];
+            const vId = item.id.replace('yt:video:', '');
+            if (config.ytLastVideoId === vId) continue;
+            config.ytLastVideoId = vId;
             await config.save();
+            const g = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!g) continue;
+            const isLive = item.title.toLowerCase().includes('live') || item.title.toLowerCase().includes('stream');
+            const target = isLive ? config.ytLiveChannel : config.ytUploadChannel;
+            if (target) {
+                const c = g.channels.cache.get(target);
+                if (c) {
+                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
+                    await c.send({ content: msg }).catch(() => null);
+                }
+            }
+        }
+    } catch (e) { console.error(e); }
+}, 300000);
 
-        
+client.login(process.env.DISCORD_TOKEN);
+                                                         
