@@ -9,7 +9,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences // 🌟 ONLINE PLAYERS TRACK KARNE KE LIYE YEH INTENT ZARURI HAI
     ]
 });
 
@@ -73,6 +74,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const config = await GuildConfig.findOne({ guildId });
 
+        // WELCOME SETUP MODAL OPENER
         if (interaction.customId === 'btn_welcome_setup') {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
@@ -85,6 +87,7 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
+        // TICKET SETUP MODAL OPENER
         if (interaction.customId === 'btn_ticket_setup') {
             const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
             modal.addComponents(
@@ -93,6 +96,16 @@ client.on('interactionCreate', async (interaction) => {
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Ticket Category Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('Logs Channel ID & Staff Role ID (Comma)').setPlaceholder('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Message Inside & Optional Banner URL').setPlaceholder('Welcome Message || Image URL').setRequired(true).setStyle(TextInputStyle.Paragraph))
+            );
+            return await interaction.showModal(modal);
+        }
+
+        // 📊 SERVER STATS SETUP MODAL OPENER (🌟 NEW SYSTEM INTEGRATION)
+        if (interaction.customId === 'setup_stats_btn') {
+            const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Voice Channel ID').setPlaceholder('Paste total channel ID here...').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Voice Channel ID').setPlaceholder('Paste online channel ID here...').setRequired(true).setStyle(TextInputStyle.Short))
             );
             return await interaction.showModal(modal);
         }
@@ -113,7 +126,6 @@ client.on('interactionCreate', async (interaction) => {
         if (interaction.customId === 'close_ticket') {
             await interaction.reply('🔒 Generating transcript and cleaning up in 5 seconds...');
             
-            // TRANSCRIPT GENERATION LOGIC
             const fetchedMessages = await interaction.channel.messages.fetch({ limit: 100 });
             let transcriptText = `--- TICKET TRANSCRIPT FOR #${interaction.channel.name} ---\n\n`;
             
@@ -140,6 +152,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isModalSubmit()) {
         await interaction.deferReply({ ephemeral: true });
 
+        // WELCOME FORM SUBMIT
         if (interaction.customId === 'modal_welcome') {
             await GuildConfig.findOneAndUpdate(
                 { guildId },
@@ -155,6 +168,7 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.editReply({ content: '✅ Welcome configurations successfully saved!' });
         }
 
+        // TICKET FORM SUBMIT
         if (interaction.customId === 'modal_ticket') {
             try {
                 const rawLogsRole = interaction.fields.getTextInputValue('t_logs').split(',');
@@ -198,6 +212,32 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.editReply({ content: '❌ Input parse processing error.' });
             }
         }
+
+        // 📊 SERVER STATS FORM SUBMIT (🌟 NEW SYSTEM INTEGRATION)
+        if (interaction.customId === 'modal_stats_setup') {
+            try {
+                const totalChanId = interaction.fields.getTextInputValue('stats_total_input').trim();
+                const onlineChanId = interaction.fields.getTextInputValue('stats_online_input').trim();
+
+                const chan1 = interaction.guild.channels.cache.get(totalChanId);
+                const chan2 = interaction.guild.channels.cache.get(onlineChanId);
+
+                if (!chan1 || !chan2 || chan1.type !== 2 || chan2.type !== 2) {
+                    return await interaction.editReply({ content: '❌ **Setup Failed:** Dono IDs valid **Voice Channels** ki honi chahiye aur isi server ki honi chahiye!' });
+                }
+
+                await GuildConfig.findOneAndUpdate(
+                    { guildId },
+                    { totalMembersChan: totalChanId, onlinePlayersChan: onlineChanId },
+                    { upsert: true, new: true }
+                );
+
+                return await interaction.editReply({ content: `✅ **Server Stats Configuration Saved!**\n🪐 Total Channel: <#${totalChanId}>\n🟢 Online Channel: <#${onlineChanId}>\n\n*Background service har 10 minute mein name update karegi.*` });
+            } catch (err) {
+                console.error(err);
+                return await interaction.editReply({ content: '❌ Something went wrong while saving stats config.' });
+            }
+        }
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
@@ -232,11 +272,8 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ================= GLOBAL BACKGROUND STATS ENGINE =================
-// Note: Variable dobara declare nahi kiya hai taaki crash na ho
-
 setInterval(async () => {
     try {
-        // GuildConfig variable upar pehle se declared hai, isliye direct use kar rahe hain
         const configs = await GuildConfig.find({ 
             totalMembersChan: { $ne: null }, 
             onlinePlayersChan: { $ne: null } 
@@ -248,17 +285,14 @@ setInterval(async () => {
 
             const totalMembers = guild.memberCount;
             
-            // Online players presence dynamic fetch
             const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
             const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
 
-            // Total Members Channel Update
             if (config.totalMembersChan) {
                 const chan = guild.channels.cache.get(config.totalMembersChan);
                 if (chan) await chan.setName(`🪐 Total Members: ${totalMembers}`).catch(() => null);
             }
 
-            // Online Players Channel Update
             if (config.onlinePlayersChan) {
                 const chan = guild.channels.cache.get(config.onlinePlayersChan);
                 if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
@@ -267,6 +301,7 @@ setInterval(async () => {
     } catch (err) {
         console.error("Background Stats Engine Error:", err);
     }
-}, 600000); // Har 10 minute mein auto-update loop chalaega
+}, 600000);
 
 client.login(process.env.DISCORD_TOKEN);
+                    
