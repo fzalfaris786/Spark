@@ -43,22 +43,23 @@ module.exports = {
 
         // --- BUTTON CLICKS HANDLING ---
         if (interaction.isButton()) {
+            // SERVER STATS BUTTON
             if (interaction.customId === 'setup_stats_btn') {
                 const modal = new ModalBuilder()
-                    .setCustomId('stats_modal_submit')
+                    .setCustomId('modal_stats_setup') // Matched perfectly with Index.js
                     .setTitle('📊 Server Stats Setup');
 
                 const totalInput = new TextInputBuilder()
-                    .setCustomId('total_chan_input')
+                    .setCustomId('stats_total_input')
                     .setLabel('Total Members Voice Channel ID')
-                    .setPlaceholder('Paste the channel ID...')
+                    .setPlaceholder('Paste total channel ID here...')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
                 const onlineInput = new TextInputBuilder()
-                    .setCustomId('online_chan_input')
+                    .setCustomId('stats_online_input')
                     .setLabel('Online Players Voice Channel ID')
-                    .setPlaceholder('Paste the channel ID...')
+                    .setPlaceholder('Paste online channel ID here...')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
@@ -67,10 +68,10 @@ module.exports = {
                     new ActionRowBuilder().addComponents(onlineInput)
                 );
 
-                await interaction.showModal(modal);
+                return await interaction.showModal(modal);
             }
 
-            // 📺 YOUTUBE SETUP MODAL OPENER
+            // 📺 YOUTUBE BUTTON (Matched perfectly with Index.js routing)
             if (interaction.customId === 'setup_youtube_btn') {
                 const modal = new ModalBuilder()
                     .setCustomId('youtube_modal_submit')
@@ -103,62 +104,7 @@ module.exports = {
                     new ActionRowBuilder().addComponents(uploadChanInput)
                 );
 
-                await interaction.showModal(modal);
-            }
-        }
-
-        // --- MODAL SUBMISSIONS HANDLING ---
-        if (interaction.isModalSubmit()) {
-            if (interaction.customId === 'stats_modal_submit') {
-                await interaction.deferReply({ ephemeral: true });
-
-                const totalChanId = interaction.fields.getTextInputValue('total_chan_input').trim();
-                const onlineChanId = interaction.fields.getTextInputValue('online_chan_input').trim();
-
-                const chan1 = interaction.guild.channels.cache.get(totalChanId);
-                const chan2 = interaction.guild.channels.cache.get(onlineChanId);
-
-                if (!chan1 || !chan2 || chan1.type !== 2 || chan2.type !== 2) {
-                    return interaction.editReply({ 
-                        content: '❌ **Setup Failed:** Both IDs must belong to valid **Voice Channels** in this server!' 
-                    });
-                }
-
-                await GuildConfig.findOneAndUpdate(
-                    { guildId: interaction.guild.id },
-                    { totalMembersChan: totalChanId, onlinePlayersChan: onlineChanId },
-                    { upsert: true, new: true }
-                );
-
-                return interaction.editReply({ 
-                    content: `✅ **Server Stats Configuration Saved!**\n🪐 Total Channel: <#${totalChanId}>\n🟢 Online Channel: <#${onlineChanId}>`
-                });
-            }
-
-            // 📺 YOUTUBE CONFIGURATION SAVE HANDLER
-            if (interaction.customId === 'youtube_modal_submit') {
-                await interaction.deferReply({ ephemeral: true });
-
-                const ytChannelId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
-                const liveChanId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
-                const uploadChanId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
-
-                const checkLiveChan = interaction.guild.channels.cache.get(liveChanId);
-                const checkUploadChan = interaction.guild.channels.cache.get(uploadChanId);
-
-                if (!checkLiveChan || !checkUploadChan) {
-                    return interaction.editReply({ content: '❌ **Setup Failed:** Alert channels must be valid text channels within this server!' });
-                }
-
-                await GuildConfig.findOneAndUpdate(
-                    { guildId: interaction.guild.id },
-                    { ytChannelId, ytLiveChannel: liveChanId, ytUploadChannel: uploadChanId },
-                    { upsert: true, new: true }
-                );
-
-                return interaction.editReply({
-                    content: `✅ **YouTube Notification Tracker Connected!**\n📺 Channel ID: \`${ytChannelId}\`\n🎥 Live Alerts: <#${liveChanId}>\n🎬 Upload Alerts: <#${uploadChanId}>`
-                });
+                return await interaction.showModal(modal);
             }
         }
     }
