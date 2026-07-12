@@ -21,9 +21,15 @@ const GuildConfigSchema = new mongoose.Schema({
     ticketMessage: { type: String, default: '' },
     ticketImage: { type: String, default: '' },   // Custom Panel Embed Banner URL storage
 
-    // 📊 Server Stats System Data (Newly Added Dynamically)
+    // Server Stats System Data
     totalMembersChan: { type: String, default: null },
-    onlinePlayersChan: { type: String, default: null }
+    onlinePlayersChan: { type: String, default: null },
+
+    // 📺 YouTube Automation Configuration Data
+    ytChannelId: { type: String, default: null },
+    ytLiveChannel: { type: String, default: null },
+    ytUploadChannel: { type: String, default: null },
+    ytLastVideoId: { type: String, default: null }
 });
 
 module.exports = mongoose.model('GuildConfig', GuildConfigSchema);
