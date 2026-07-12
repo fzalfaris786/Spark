@@ -19,7 +19,11 @@ const GuildConfigSchema = new mongoose.Schema({
     ticketLogs: { type: String, default: '' },
     ticketRole: { type: String, default: '' },   // Staff Role ID authenticated authorization
     ticketMessage: { type: String, default: '' },
-    ticketImage: { type: String, default: '' }    // Custom Panel Embed Banner URL storage
+    ticketImage: { type: String, default: '' },   // Custom Panel Embed Banner URL storage
+
+    // 📊 Server Stats System Data (Newly Added Dynamically)
+    totalMembersChan: { type: String, default: null },
+    onlinePlayersChan: { type: String, default: null }
 });
 
 module.exports = mongoose.model('GuildConfig', GuildConfigSchema);
