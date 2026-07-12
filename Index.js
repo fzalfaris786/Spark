@@ -2,7 +2,10 @@ const { Client, GatewayIntentBits, Collection, REST, Routes, ModalBuilder, TextI
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+const Parser = require('rss-parser'); // 📺 YouTube tracking package
 const GuildConfig = require('./models/GuildConfig');
+
+const parser = new Parser();
 
 const client = new Client({
     intents: [
@@ -34,29 +37,50 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= WELCOME EVENT =================
+// ================= WELCOME & INSTANT STATS ON JOIN =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
-        if (!config || !config.welcomeChannel) return;
+        if (!config) return;
 
-        const channel = member.guild.channels.cache.get(config.welcomeChannel);
-        if (channel) {
-            let descText = config.welcomeMessage || 'Welcome!';
-            descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
+        // Welcome System
+        if (config.welcomeChannel) {
+            const channel = member.guild.channels.cache.get(config.welcomeChannel);
+            if (channel) {
+                let descText = config.welcomeMessage || 'Welcome!';
+                descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
 
-            const embed = new EmbedBuilder()
-                .setTitle(config.welcomeTitle || 'Welcome!')
-                .setDescription(descText)
-                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                .setColor('#00ffcc');
+                const embed = new EmbedBuilder()
+                    .setTitle(config.welcomeTitle || 'Welcome!')
+                    .setDescription(descText)
+                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                    .setColor('#00ffcc');
 
-            if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) embed.setImage(config.welcomeThumbnail);
-            await channel.send({ embeds: [embed] });
+                if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) embed.setImage(config.welcomeThumbnail);
+                await channel.send({ embeds: [embed] });
+            }
         }
         if (config.welcomeDm) {
             try { await member.send(config.welcomeDm); } catch (e) {}
         }
+
+        // 📊 Total Members Count Update - INSTANT ON JOIN
+        if (config.totalMembersChan) {
+            const chan = member.guild.channels.cache.get(config.totalMembersChan);
+            if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
+        }
+    } catch (err) { console.error(err); }
+});
+
+// ================= INSTANT STATS ON LEAVE =================
+client.on('guildMemberRemove', async (member) => {
+    try {
+        const config = await GuildConfig.findOne({ guildId: member.guild.id });
+        if (!config || !config.totalMembersChan) return;
+
+        // 📊 Total Members Count Update - INSTANT ON LEAVE
+        const chan = member.guild.channels.cache.get(config.totalMembersChan);
+        if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
     } catch (err) { console.error(err); }
 });
 
@@ -74,7 +98,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const config = await GuildConfig.findOne({ guildId });
 
-        // WELCOME SETUP MODAL OPENER (IDs matched perfectly with panel.js)
+        // WELCOME SETUP MODAL OPENER
         if (interaction.customId === 'btn_welcome_setup' || interaction.customId === 'setup_welcome_btn') {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
@@ -87,7 +111,7 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // TICKET SETUP MODAL OPENER (IDs matched perfectly with panel.js)
+        // TICKET SETUP MODAL OPENER
         if (interaction.customId === 'btn_ticket_setup' || interaction.customId === 'setup_tickets_btn') {
             const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
             modal.addComponents(
@@ -232,7 +256,13 @@ client.on('interactionCreate', async (interaction) => {
                     { upsert: true, new: true }
                 );
 
-                return await interaction.editReply({ content: `✅ **Server Stats Configuration Saved!**\n🪐 Total Channel: <#${totalChanId}>\n🟢 Online Channel: <#${onlineChanId}>\n\n*Background service har 10 minute mein name update karegi.*` });
+                // Setup hotte hi channel names instant sync ho jayein
+                await chan1.setName(`🪐 Total Members: ${interaction.guild.memberCount}`).catch(() => null);
+                const mems = await interaction.guild.members.fetch({ withPresences: true }).catch(() => null);
+                const onPlayers = mems ? mems.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
+                await chan2.setName(`🟢 Online Players: ${onPlayers}`).catch(() => null);
+
+                return await interaction.editReply({ content: `✅ **Server Stats Configuration Saved!**\n🪐 Total Channel: <#${totalChanId}>\n🟢 Online Channel: <#${onlineChanId}>` });
             } catch (err) {
                 console.error(err);
                 return await interaction.editReply({ content: '❌ Something went wrong while saving stats config.' });
@@ -271,37 +301,61 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= GLOBAL BACKGROUND STATS ENGINE =================
+// ================= GLOBAL BACKGROUND REFRESH (STATS & YOUTUBE) =================
 setInterval(async () => {
     try {
-        const configs = await GuildConfig.find({ 
-            totalMembersChan: { $ne: null }, 
-            onlinePlayersChan: { $ne: null } 
-        });
-        
-        for (const config of configs) {
+        // --- Part 1: Online Stats Refresh ---
+        const statsConfigs = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
+        for (const config of statsConfigs) {
             const guild = await client.guilds.fetch(config.guildId).catch(() => null);
             if (!guild) continue;
-
-            const totalMembers = guild.memberCount;
             
             const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
             const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
-
-            if (config.totalMembersChan) {
-                const chan = guild.channels.cache.get(config.totalMembersChan);
-                if (chan) await chan.setName(`🪐 Total Members: ${totalMembers}`).catch(() => null);
-            }
 
             if (config.onlinePlayersChan) {
                 const chan = guild.channels.cache.get(config.onlinePlayersChan);
                 if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
             }
         }
+
+        // --- Part 2: Dynamic YouTube Feeds Monitor ---
+        const ytConfigs = await GuildConfig.find({ ytChannelId: { $ne: null } });
+        for (const config of ytConfigs) {
+            const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
+            if (!feed || !feed.items || feed.items.length === 0) continue;
+
+            const latestVideo = feed.items[0];
+            const videoId = latestVideo.id.replace('yt:video:', '');
+            const videoLink = latestVideo.link;
+            const videoTitle = latestVideo.title;
+
+            if (config.ytLastVideoId === videoId) continue;
+
+            config.ytLastVideoId = videoId;
+            await config.save();
+
+            const guild = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!guild) continue;
+
+            const isLive = videoTitle.toLowerCase().includes('live') || videoTitle.toLowerCase().includes('stream');
+            const targetChannelId = isLive ? config.ytLiveChannel : config.ytUploadChannel;
+
+            if (targetChannelId) {
+                const alertChannel = guild.channels.cache.get(targetChannelId);
+                if (alertChannel) {
+                    const messageContent = isLive 
+                        ? `🔴 **HEYY EVERYONE! WE ARE LIVE NOW!** 🔴\n📢 **${videoTitle}**\n👉 Join the stream here: ${videoLink} @everyone`
+                        : `🎬 **NEW VIDEO UPLOADED!** 🎬\n📢 **${videoTitle}**\n👉 Watch here: ${videoLink} @everyone`;
+                    
+                    await alertChannel.send({ content: messageContent }).catch(() => null);
+                }
+            }
+        }
     } catch (err) {
-        console.error("Background Stats Engine Error:", err);
+        console.error("Background Engine Sync Error:", err);
     }
-}, 600000);
+}, 300000); // Safe 5-minute cycle loop operations
 
 client.login(process.env.DISCORD_TOKEN);
-                                                                        
+                        
