@@ -10,7 +10,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences // 🌟 ONLINE PLAYERS TRACK KARNE KE LIYE YEH INTENT ZARURI HAI
+        GatewayIntentBits.GuildPresences
     ]
 });
 
@@ -74,8 +74,8 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const config = await GuildConfig.findOne({ guildId });
 
-        // WELCOME SETUP MODAL OPENER
-        if (interaction.customId === 'btn_welcome_setup') {
+        // WELCOME SETUP MODAL OPENER (IDs matched perfectly with panel.js)
+        if (interaction.customId === 'btn_welcome_setup' || interaction.customId === 'setup_welcome_btn') {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
@@ -87,8 +87,8 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // TICKET SETUP MODAL OPENER
-        if (interaction.customId === 'btn_ticket_setup') {
+        // TICKET SETUP MODAL OPENER (IDs matched perfectly with panel.js)
+        if (interaction.customId === 'btn_ticket_setup' || interaction.customId === 'setup_tickets_btn') {
             const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Panel Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
@@ -100,7 +100,7 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // 📊 SERVER STATS SETUP MODAL OPENER (🌟 NEW SYSTEM INTEGRATION)
+        // SERVER STATS SETUP MODAL OPENER
         if (interaction.customId === 'setup_stats_btn') {
             const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
             modal.addComponents(
@@ -213,7 +213,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 📊 SERVER STATS FORM SUBMIT (🌟 NEW SYSTEM INTEGRATION)
+        // SERVER STATS FORM SUBMIT
         if (interaction.customId === 'modal_stats_setup') {
             try {
                 const totalChanId = interaction.fields.getTextInputValue('stats_total_input').trim();
@@ -260,7 +260,7 @@ client.on('interactionCreate', async (interaction) => {
             ]
         });
 
-        const embed = new EmbedBuilder().setTitle('Ticket Panel Initialized').setDescription(config.ticketMessage).setColor('#57F287');
+        const embed = new EmbedBuilder().setTitle('Ticket Panel Initialized').setDescription(config.ticketMessage).setColor('#00ffcc');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
@@ -304,4 +304,4 @@ setInterval(async () => {
 }, 600000);
 
 client.login(process.env.DISCORD_TOKEN);
-                    
+                                                                        
