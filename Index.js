@@ -134,6 +134,17 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
+        // 📺 YOUTUBE SETUP MODAL OPENER (🌟 FIXED INTERACTION)
+        if (interaction.customId === 'setup_youtube_btn') {
+            const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID (e.g. UCxxxx...)').setPlaceholder('Paste your YouTube Channel ID...').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Stream Alert Channel ID').setPlaceholder('Channel ID for Live alerts...').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Uploads Alert Channel ID').setPlaceholder('Channel ID for Video Upload alerts...').setRequired(true).setStyle(TextInputStyle.Short))
+            );
+            return await interaction.showModal(modal);
+        }
+
         // --- BUTTON ACTIONS STAFF ONLY ROLE VERIFICATION ---
         if (interaction.customId === 'claim_ticket' || interaction.customId === 'close_ticket') {
             if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
@@ -268,6 +279,35 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.editReply({ content: '❌ Something went wrong while saving stats config.' });
             }
         }
+
+        // 📺 YOUTUBE FORM SUBMIT (🌟 FIXED INTERACTION)
+        if (interaction.customId === 'youtube_modal_submit') {
+            try {
+                const ytChannelId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
+                const liveChanId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
+                const uploadChanId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
+
+                const checkLiveChan = interaction.guild.channels.cache.get(liveChanId);
+                const checkUploadChan = interaction.guild.channels.cache.get(uploadChanId);
+
+                if (!checkLiveChan || !checkUploadChan) {
+                    return await interaction.editReply({ content: '❌ **Setup Failed:** Alert channels must be valid text channels within this server!' });
+                }
+
+                await GuildConfig.findOneAndUpdate(
+                    { guildId },
+                    { ytChannelId, ytLiveChannel: liveChanId, ytUploadChannel: uploadChanId },
+                    { upsert: true, new: true }
+                );
+
+                return await interaction.editReply({
+                    content: `✅ **YouTube Notification Tracker Connected!**\n📺 Channel ID: \`${ytChannelId}\`\n🎥 Live Alerts: <#${liveChanId}>\n🎬 Upload Alerts: <#${uploadChanId}>`
+                });
+            } catch (err) {
+                console.error(err);
+                return await interaction.editReply({ content: '❌ Something went wrong while saving YouTube config.' });
+            }
+        }
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
@@ -311,51 +351,4 @@ setInterval(async () => {
             if (!guild) continue;
             
             const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
-            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
-
-            if (config.onlinePlayersChan) {
-                const chan = guild.channels.cache.get(config.onlinePlayersChan);
-                if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
-            }
-        }
-
-        // --- Part 2: Dynamic YouTube Feeds Monitor ---
-        const ytConfigs = await GuildConfig.find({ ytChannelId: { $ne: null } });
-        for (const config of ytConfigs) {
-            const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
-            if (!feed || !feed.items || feed.items.length === 0) continue;
-
-            const latestVideo = feed.items[0];
-            const videoId = latestVideo.id.replace('yt:video:', '');
-            const videoLink = latestVideo.link;
-            const videoTitle = latestVideo.title;
-
-            if (config.ytLastVideoId === videoId) continue;
-
-            config.ytLastVideoId = videoId;
-            await config.save();
-
-            const guild = await client.guilds.fetch(config.guildId).catch(() => null);
-            if (!guild) continue;
-
-            const isLive = videoTitle.toLowerCase().includes('live') || videoTitle.toLowerCase().includes('stream');
-            const targetChannelId = isLive ? config.ytLiveChannel : config.ytUploadChannel;
-
-            if (targetChannelId) {
-                const alertChannel = guild.channels.cache.get(targetChannelId);
-                if (alertChannel) {
-                    const messageContent = isLive 
-                        ? `🔴 **HEYY EVERYONE! WE ARE LIVE NOW!** 🔴\n📢 **${videoTitle}**\n👉 Join the stream here: ${videoLink} @everyone`
-                        : `🎬 **NEW VIDEO UPLOADED!** 🎬\n📢 **${videoTitle}**\n👉 Watch here: ${videoLink} @everyone`;
-                    
-                    await alertChannel.send({ content: messageContent }).catch(() => null);
-                }
-            }
-        }
-    } catch (err) {
-        console.error("Background Engine Sync Error:", err);
-    }
-}, 300000); // Safe 5-minute cycle loop operations
-
-client.login(process.env.DISCORD_TOKEN);
-                        
+            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.stat
