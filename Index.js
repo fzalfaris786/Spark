@@ -34,6 +34,7 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
+// ================= WELCOME & INSTANT STATS ON JOIN =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
@@ -43,7 +44,17 @@ client.on('guildMemberAdd', async (member) => {
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
                 descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
-                const embed = new EmbedBuilder().setTitle(config.welcomeTitle || 'Welcome!').setDescription(descText).setColor('#00ffcc');
+                
+                // 🌟 FIXED: Added dynamic member avatar thumbnail here
+                const embed = new EmbedBuilder()
+                    .setTitle(config.welcomeTitle || 'Welcome!')
+                    .setDescription(descText)
+                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+                    .setColor('#00ffcc');
+                
+                if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) {
+                    embed.setImage(config.welcomeThumbnail);
+                }
                 await channel.send({ embeds: [embed] }).catch(() => null);
             }
         }
@@ -54,6 +65,7 @@ client.on('guildMemberAdd', async (member) => {
     } catch (err) { console.error(err); }
 });
 
+// ================= INSTANT STATS ON LEAVE =================
 client.on('guildMemberRemove', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
@@ -64,6 +76,7 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
+// ================= DYNAMIC INTERACTIONS =================
 client.on('interactionCreate', async (interaction) => {
     const guildId = interaction.guild?.id;
     if (!guildId) return;
@@ -203,6 +216,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ================= TIMED LIVE REFRESH LOOP =================
 setInterval(async () => {
     try {
         const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
@@ -241,4 +255,4 @@ setInterval(async () => {
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
-                                                         
+                                                                                                                                                              
