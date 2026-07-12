@@ -195,25 +195,64 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
+        if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
         if (!config) return;
+        
+        // Konsi category select ki hai usko variable me liya
+        const selectedCategory = interaction.values[0]; 
         const name = `ticket-${interaction.user.username.toLowerCase()}`;
-        if (interaction.guild.channels.cache.find(c => c.name === name)) return await interaction.reply({ content: '❌ Ticket active.', ephemeral: true });
+        
+        if (interaction.guild.channels.cache.find(c => c.name === name)) {
+            return await interaction.reply({ content: '❌ You already have an active ticket.', ephemeral: true });
+        }
+        
         await interaction.deferReply({ ephemeral: true });
+        
+        // Ticket Channel Create Logic
         const ch = await interaction.guild.channels.create({
-            name, parent: config.ticketParent || null,
+            name, 
+            parent: config.ticketParent || null,
             permissionOverwrites: [
                 { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
                 { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
                 ...(config.ticketRole ? [{ id: config.ticketRole, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : [])
             ]
         });
-        const embed = new EmbedBuilder().setTitle('Ticket Panel').setDescription(config.ticketMessage).setColor('#00ffcc');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
+
+        // User variables replace karne ke liye
+        let finalMessage = config.ticketMessage || 'Thank you for creating a ticket.';
+        finalMessage = finalMessage
+            .replace(/{user}/g, `${interaction.user}`)
+            .replace(/{{User.Mention}}/g, `${interaction.user}`);
+
+        // Staff Role to ping inside the text
+        if (config.ticketRole) {
+            finalMessage = `${finalMessage}\n\n🔔 **Staff Ping:** <@&${config.ticketRole}>`;
+        }
+
+        // Final Embed with Selected Category Field
+        const embed = new EmbedBuilder()
+            .setTitle('🎫 Ticket Support Terminal')
+            .setDescription(finalMessage)
+            .addFields({ name: '🗂️ Selected Category', value: `\`${selectedCategory}\``, inline: false })
+            .setColor('#00ffcc');
+
+        // Banner URL image rendering logic
+        if (config.ticketImage && config.ticketImage.startsWith('http')) {
+            embed.setImage(config.ticketImage);
+        }
+
+        // Claim and Close Buttons
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), 
+            new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
+        );
+
         await ch.send({ embeds: [embed], components: [row] });
-        await interaction.editReply({ content: `Generated: ${ch}` });
-    }
+        await interaction.editReply({ content: `Generated your ticket room: ${ch}` });
+        }
+    
 });
 
 // ================= TIMED LIVE REFRESH LOOP =================
