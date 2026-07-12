@@ -231,4 +231,45 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ================= GLOBAL BACKGROUND STATS ENGINE =================
+const GuildConfig = require('./models/GuildConfig');
+
+setInterval(async () => {
+    try {
+        // Database se un saare servers ki list nikalo jinhone stats setup kiya hai
+        const configs = await GuildConfig.find({ 
+            totalMembersChan: { $ne: null }, 
+            onlinePlayersChan: { $ne: null } 
+        });
+        
+        for (const config of configs) {
+            const guild = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!guild) continue;
+
+            const totalMembers = guild.memberCount;
+            
+            // Online players fetch karne ke liye presences lazmi hain
+            const members = await guild.members.fetch({ withPresences: true }).catch(() => null);
+            const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
+
+            // Total Members Channel Update
+            if (config.totalMembersChan) {
+                const chan = guild.channels.cache.get(config.totalMembersChan);
+                if (chan) await chan.setName(`🪐 Total Members: ${totalMembers}`).catch(() => null);
+            }
+
+            // Online Players Channel Update
+            if (config.onlinePlayersChan) {
+                const chan = guild.channels.cache.get(config.onlinePlayersChan);
+                if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
+            }
+        }
+    } catch (err) {
+        console.error("Background Stats Engine Error:", err);
+    }
+}, 600000); // Har 10 minute mein auto-update loop chalaega
+
+// client.login(process.env.TOKEN); <-- IS LINE KE THEEK UPAR PASTE KARNA HAI
+
+
 client.login(process.env.DISCORD_TOKEN);
