@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Collection, REST, Routes, ModalBuilder, TextI
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
-const Parser = require('rss-parser'); // 📺 YouTube tracking package
+const Parser = require('rss-parser');
 const GuildConfig = require('./models/GuildConfig');
 
 const parser = new Parser();
@@ -37,13 +37,11 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= WELCOME & INSTANT STATS ON JOIN =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
         if (!config) return;
 
-        // Welcome System
         if (config.welcomeChannel) {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
@@ -64,7 +62,6 @@ client.on('guildMemberAdd', async (member) => {
             try { await member.send(config.welcomeDm); } catch (e) {}
         }
 
-        // 📊 Total Members Count Update - INSTANT ON JOIN
         if (config.totalMembersChan) {
             const chan = member.guild.channels.cache.get(config.totalMembersChan);
             if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
@@ -72,19 +69,16 @@ client.on('guildMemberAdd', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= INSTANT STATS ON LEAVE =================
 client.on('guildMemberRemove', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
         if (!config || !config.totalMembersChan) return;
 
-        // 📊 Total Members Count Update - INSTANT ON LEAVE
         const chan = member.guild.channels.cache.get(config.totalMembersChan);
         if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS =================
 client.on('interactionCreate', async (interaction) => {
     const guildId = interaction.guild?.id;
     if (!guildId) return;
@@ -98,7 +92,6 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         const config = await GuildConfig.findOne({ guildId });
 
-        // WELCOME SETUP MODAL OPENER
         if (interaction.customId === 'btn_welcome_setup' || interaction.customId === 'setup_welcome_btn') {
             const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
             modal.addComponents(
@@ -111,7 +104,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // TICKET SETUP MODAL OPENER
         if (interaction.customId === 'btn_ticket_setup' || interaction.customId === 'setup_tickets_btn') {
             const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
             modal.addComponents(
@@ -124,7 +116,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // SERVER STATS SETUP MODAL OPENER
         if (interaction.customId === 'setup_stats_btn') {
             const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
             modal.addComponents(
@@ -134,18 +125,16 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // 📺 YOUTUBE SETUP MODAL OPENER
         if (interaction.customId === 'setup_youtube_btn') {
             const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
             modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID (e.g. UCxxxx...)').setPlaceholder('Paste your YouTube Channel ID...').setRequired(true).setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID').setPlaceholder('Paste your YouTube Channel ID...').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Stream Alert Channel ID').setPlaceholder('Channel ID for Live alerts...').setRequired(true).setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Uploads Alert Channel ID').setPlaceholder('Channel ID for Video Upload alerts...').setRequired(true).setStyle(TextInputStyle.Short))
             );
             return await interaction.showModal(modal);
         }
 
-        // --- BUTTON ACTIONS STAFF ONLY ROLE VERIFICATION ---
         if (interaction.customId === 'claim_ticket' || interaction.customId === 'close_ticket') {
             if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
                 return await interaction.reply({ content: '❌ Only designated Staff can manage this ticket.', ephemeral: true });
@@ -187,7 +176,6 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isModalSubmit()) {
         await interaction.deferReply({ ephemeral: true });
 
-        // WELCOME FORM SUBMIT
         if (interaction.customId === 'modal_welcome') {
             await GuildConfig.findOneAndUpdate(
                 { guildId },
@@ -203,7 +191,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.editReply({ content: '✅ Welcome configurations successfully saved!' });
         }
 
-        // TICKET FORM SUBMIT
         if (interaction.customId === 'modal_ticket') {
             try {
                 const rawLogsRole = interaction.fields.getTextInputValue('t_logs').split(',');
@@ -248,7 +235,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // SERVER STATS FORM SUBMIT
         if (interaction.customId === 'modal_stats_setup') {
             try {
                 const totalChanId = interaction.fields.getTextInputValue('stats_total_input').trim();
@@ -279,7 +265,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 📺 YOUTUBE FORM SUBMIT
         if (interaction.customId === 'youtube_modal_submit') {
             try {
                 const ytChannelId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
@@ -340,10 +325,8 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= GLOBAL BACKGROUND REFRESH (STATS & YOUTUBE) =================
 setInterval(async () => {
     try {
-        // --- Part 1: Online Stats Refresh ---
         const statsConfigs = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
         for (const config of statsConfigs) {
             const guild = await client.guilds.fetch(config.guildId).catch(() => null);
@@ -353,4 +336,24 @@ setInterval(async () => {
             const onlinePlayers = members ? members.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
 
             if (config.onlinePlayersChan) {
-                const chan = guild.channels.
+                const chan = guild.channels.cache.get(config.onlinePlayersChan);
+                if (chan) await chan.setName(`🟢 Online Players: ${onlinePlayers}`).catch(() => null);
+            }
+        }
+
+        const ytConfigs = await GuildConfig.find({ ytChannelId: { $ne: null } });
+        for (const config of ytConfigs) {
+            const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
+            if (!feed || !feed.items || feed.items.length === 0) continue;
+
+            const latestVideo = feed.items[0];
+            const videoId = latestVideo.id.replace('yt:video:', '');
+            const videoLink = latestVideo.link;
+            const videoTitle = latestVideo.title;
+
+            if (config.ytLastVideoId === videoId) continue;
+
+            config.ytLastVideoId = videoId;
+            await config.save();
+
+        
