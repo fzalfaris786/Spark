@@ -43,18 +43,34 @@ client.on('guildMemberAdd', async (member) => {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
-                descText = descText.replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
+                
+                // Dynamic strings handle karne ka clean template syntax
+                descText = descText
+                    .replace(/{user}/g, `${member}`)
+                    .replace(/{{User.Mention}}/g, `${member}`)
+                    .replace(/{{user.mention}}/g, `${member}`)
+                    .replace(/{memberCount}/g, `${member.guild.memberCount}`);
+                
+                // Account creation date calculation (As per screenshot formatting)
+                const createdAtFormatted = member.user.createdAt.toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'long', year: 'numeric'
+                });
+                descText = descText.replace(/{accountCreated}/g, createdAtFormatted);
                 
                 const embed = new EmbedBuilder()
-                    .setTitle(config.welcomeTitle || 'Welcome!')
+                    .setTitle(config.welcomeTitle || '✨ WELCOME ✨')
                     .setDescription(descText)
                     .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setColor('#00ffcc');
+                    .setColor('#FFCC00')
+                    .setFooter({ text: `Member #${member.guild.memberCount}` })
+                    .setTimestamp();
                 
                 if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) {
                     embed.setImage(config.welcomeThumbnail);
                 }
-                await channel.send({ embeds: [embed] }).catch(() => null);
+                
+                // Embed ke bahar content me dynamic target pointer reference
+                await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => null);
             }
         }
         if (config.totalMembersChan) {
@@ -162,12 +178,10 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.editReply({ content: '✅ Saved Welcome!' });
         }
         
-        // ================= TICKET MODAL SUBMIT =================
         if (interaction.customId === 'modal_ticket') {
             const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
             const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
             
-            // Extract description and banner image via double pipe separator
             const descData = interaction.fields.getTextInputValue('t_desc').split('||');
             const panelDescription = descData[0]?.trim();
             const panelImage = descData[1]?.trim() || '';
@@ -237,7 +251,8 @@ client.on('interactionCreate', async (interaction) => {
         let parsedMessage = config.ticketMessage || 'Thank you for contacting support.';
         parsedMessage = parsedMessage
             .replace(/{user}/g, `${interaction.user}`)
-            .replace(/{{User.Mention}}/g, `${interaction.user}`);
+            .replace(/{{User.Mention}}/g, `${interaction.user}`)
+            .replace(/{{user.mention}}/g, `${interaction.user}`);
 
         if (config.ticketRole) {
             parsedMessage = `${parsedMessage}\n\n🔔 **Staff Notification:** <@&${config.ticketRole}>`;
@@ -254,7 +269,8 @@ client.on('interactionCreate', async (interaction) => {
             new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
         );
 
-        await ch.send({ embeds: [embed], components: [row] });
+        // Ticket create hone par channel ke andar embed ke upar bhi mention bhejega
+        await ch.send({ content: `${interaction.user}`, embeds: [embed], components: [row] });
         await interaction.editReply({ content: `Generated your ticket room: ${ch}` });
     }
 });
@@ -298,4 +314,4 @@ setInterval(async () => {
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
-                
+        
