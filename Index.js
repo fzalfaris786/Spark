@@ -34,7 +34,7 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= WELCOME & INSTANT STATS ON JOIN =================
+// ================= WELCOME & INSTANT STATS ON JOIN (FIXED MENTIONS) =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
@@ -44,14 +44,14 @@ client.on('guildMemberAdd', async (member) => {
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
                 
-                // Dynamic strings handle karne ka clean template syntax
+                // Parses user template references into interactive member mentions
                 descText = descText
                     .replace(/{user}/g, `${member}`)
                     .replace(/{{User.Mention}}/g, `${member}`)
                     .replace(/{{user.mention}}/g, `${member}`)
                     .replace(/{memberCount}/g, `${member.guild.memberCount}`);
                 
-                // Account creation date calculation (As per screenshot formatting)
+                // Formats target account creation date into localized standard string
                 const createdAtFormatted = member.user.createdAt.toLocaleDateString('en-GB', {
                     day: 'numeric', month: 'long', year: 'numeric'
                 });
@@ -69,7 +69,7 @@ client.on('guildMemberAdd', async (member) => {
                     embed.setImage(config.welcomeThumbnail);
                 }
                 
-                // Embed ke bahar content me dynamic target pointer reference
+                // Sends interactive user string outside embed context to ensure device compatibility
                 await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => null);
             }
         }
@@ -269,9 +269,8 @@ client.on('interactionCreate', async (interaction) => {
             new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
         );
 
-        // Ticket create hone par channel ke andar embed ke upar bhi mention bhejega
-        await ch.send({ content: `${interaction.user}`, embeds: [embed], components: [row] });
-        await interaction.editReply({ content: `Generated your ticket room: ${ch}` });
+        await ch.send({ embeds: [embed], components: [row] });
+        await interaction.editReply({ content: `Generated: ${ch}` });
     }
 });
 
@@ -314,4 +313,4 @@ setInterval(async () => {
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
-        
+                    
