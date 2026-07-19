@@ -1,12 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-
-// Tumhara specific Allowed Role ID
-const ALLOWED_ROLE = "1522039193256198154";
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("say")
         .setDescription("Send message as embed")
+        // Default permission set to Administrator so only admins can see/use this slash command
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addChannelOption(opt =>
             opt.setName("channel")
                 .setRequired(true)
@@ -15,29 +14,15 @@ module.exports = {
         .addStringOption(opt =>
             opt.setName("message")
                 .setRequired(true)
-                .setDescription("Type your message (Use \n for new lines)")
+                .setDescription("Type your message (Use \\n for new lines)")
         ),
 
     async execute(interaction) {
-        // Permission Check for Specific Role
-        if (!interaction.member.roles.cache.has(ALLOWED_ROLE)) {
-            return interaction.reply({
-                content: "❌ You do not have the required staff role to use this command.",
-                ephemeral: true
-            });
-        }
-
         const channel = interaction.options.getChannel("channel");
         const message = interaction.options.getString("message");
 
         // Processing formatting strings for visual breakout text configurations
         const formattedMessage = message.replace(/\\n/g, '\n');
-
-        const embed = new EmbedBuilder()
-            .setDescription(formattedMessage)
-            .setColor("Blue")
-            .setFooter({ text: `Sent by ${interaction.user.tag}` })
-            .setTimestamp();
 
         // Target channel validation deployment check
         if (!channel.isTextBased()) {
@@ -46,6 +31,12 @@ module.exports = {
                 ephemeral: true
             });
         }
+
+        const embed = new EmbedBuilder()
+            .setDescription(formattedMessage)
+            .setColor("Blue")
+            .setFooter({ text: `Sent by ${interaction.user.tag}` })
+            .setTimestamp();
 
         await channel.send({ embeds: [embed] });
 
