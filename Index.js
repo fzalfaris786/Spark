@@ -35,21 +35,24 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (EXACT WORD MATCH) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (REGEX EXACT WORD MATCH) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // Chat ko lowercase karke uske saare shabdon ko alag-alag (array me) baant diya
-    const words = message.content.toLowerCase().split(/\s+/);
+    const userMessage = message.content.toLowerCase();
 
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Ab ye check karega ki kya trigger word ek alag shabad ke roop me array me maujood hai
-        const matched = config.autoResponses.find(r => words.includes(r.trigger));
+        // Ab hum exact word boundary (\b) check karenge taaki emoji characters safe rahein
+        const matched = config.autoResponses.find(r => {
+            const regex = new RegExp(`\\b${r.trigger}\\b`, 'i');
+            return regex.test(userMessage);
+        });
         
         if (matched && matched.replyText) {
+            // New lines (\n) ko process karne ke liye
             const formattedReply = matched.replyText.replace(/\\n/g, '\n');
 
             const responseEmbed = new EmbedBuilder()
