@@ -45,7 +45,7 @@ client.on('messageCreate', async (message) => {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Exact word match checks standard boundaries so animated emoji strings stay intact
+        // Exact word match boundaries check so animated emoji strings stay intact
         const matched = config.autoResponses.find(r => {
             const regex = new RegExp(`\\b${r.trigger}\\b`, 'i');
             return regex.test(userMessage);
@@ -114,7 +114,6 @@ client.on('guildMemberRemove', async (member) => {
         }
     } catch (err) { console.error(err); }
 });
-
 // ================= DYNAMIC INTERACTIONS =================
 client.on('interactionCreate', async (interaction) => {
     const guildId = interaction.guild?.id;
@@ -257,7 +256,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId === 'modal_auto_response') {
-                if (interaction.customId === 'modal_auto_response') {
             const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
             const autoResponses = [];
 
@@ -270,7 +268,7 @@ client.on('interactionCreate', async (interaction) => {
                         if (firstColonIndex === -1) return;
 
                         const triggerWord = block.substring(0, firstColonIndex).trim().toLowerCase();
-                        // Pehle colon ke baad ka POORA text exact response banega
+                        // First colon ke baad ka poora emoji chunk single field me save hoga
                         const replyString = block.substring(firstColonIndex + 1).trim();
 
                         if (triggerWord && replyString) {
@@ -284,7 +282,8 @@ client.on('interactionCreate', async (interaction) => {
             } catch (err) {
                 return await interaction.editReply({ content: '❌ **Formatting Error!**' });
             }
-                }
+        }
+    }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
@@ -358,4 +357,4 @@ setInterval(async () => {
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
-            
+                
