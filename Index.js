@@ -35,7 +35,7 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (REGEX EXACT WORD MATCH) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (REGEX EXACT WORD & EMOJI SAFE) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -45,14 +45,13 @@ client.on('messageCreate', async (message) => {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Ab hum exact word boundary (\b) check karenge taaki emoji characters safe rahein
+        // Exact word match checks standard boundaries so animated emoji strings stay intact
         const matched = config.autoResponses.find(r => {
             const regex = new RegExp(`\\b${r.trigger}\\b`, 'i');
             return regex.test(userMessage);
         });
         
         if (matched && matched.replyText) {
-            // New lines (\n) ko process karne ke liye
             const formattedReply = matched.replyText.replace(/\\n/g, '\n');
 
             const responseEmbed = new EmbedBuilder()
