@@ -14,7 +14,7 @@ module.exports = {
                 color: 0x5865F2
             };
 
-            // 5 Buttons max allowed in a single row
+            // Max 5 buttons are allowed in a single row
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('setup_tickets_btn')
@@ -40,7 +40,7 @@ module.exports = {
                     .setCustomId('setup_auto_btn')
                     .setLabel('Auto Response')
                     .setEmoji('💬')
-                    .setStyle(ButtonStyle.Primary) // Naya button auto response ke liye[span_2](start_span)[span_2](end_span)
+                    .setStyle(ButtonStyle.Primary)
             );
 
             return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
