@@ -35,7 +35,7 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (REGEX EXACT WORD & EMOJI SAFE) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (SMART TEXT & IMAGE EMBED) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -45,19 +45,36 @@ client.on('messageCreate', async (message) => {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Exact word match boundaries check so animated emoji strings stay intact
         const matched = config.autoResponses.find(r => {
             const regex = new RegExp(`\\b${r.trigger}\\b`, 'i');
             return regex.test(userMessage);
         });
         
         if (matched && matched.replyText) {
-            const formattedReply = matched.replyText.replace(/\\n/g, '\n');
+            let replyText = matched.replyText.replace(/\\n/g, '\n');
 
             const responseEmbed = new EmbedBuilder()
-                .setDescription(formattedReply)
                 .setColor("Blue")
                 .setTimestamp();
+
+            // Link dhoondhne ke liye URL regex
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const foundUrls = replyText.match(urlRegex);
+
+            if (foundUrls && foundUrls.length > 0) {
+                // Pehle image URL ko identify karenge
+                const imageUrl = foundUrls.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i) || url.includes('cdn.discordapp.com') || url.includes('media.discordapp.net'));
+                
+                if (imageUrl) {
+                    responseEmbed.setImage(imageUrl); // Banner Image banaya
+                    replyText = replyText.replace(imageUrl, '').trim(); // Text me se URL link hata diya taaki duplicate na dikhe
+                }
+            }
+
+            // Agar image ke alawa koi text bacha hai toh description set karo
+            if (replyText.length > 0) {
+                responseEmbed.setDescription(replyText);
+            }
 
             return message.reply({ embeds: [responseEmbed] });
         }
