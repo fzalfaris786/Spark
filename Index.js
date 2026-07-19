@@ -45,7 +45,6 @@ client.on('messageCreate', async (message) => {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Tries to locate a saved configuration pattern that matches the chat message
         const matched = config.autoResponses.find(r => r.trigger === userMessage);
         if (matched && matched.replyText) {
             return message.reply(matched.replyText);
@@ -156,7 +155,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.showModal(modal);
         }
 
-        // NEW: Auto response config launcher button handler
         if (interaction.customId === 'setup_auto_btn') {
             const modal = new ModalBuilder().setCustomId('modal_auto_response').setTitle('💬 Auto Response Core');
             modal.addComponents(
@@ -246,7 +244,6 @@ client.on('interactionCreate', async (interaction) => {
             return await interaction.editReply({ content: '✅ Connected YouTube!' });
         }
 
-        // NEW: Modal input data submission receiver
         if (interaction.customId === 'modal_auto_response') {
             const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
             const autoResponses = [];
@@ -335,4 +332,6 @@ setInterval(async () => {
             const isLive = item.title.toLowerCase().includes('live') || item.title.toLowerCase().includes('stream');
             const target = isLive ? config.ytLiveChannel : config.ytUploadChannel;
             if (target) {
-                const c = g.channels.cache.g
+                const c = g.channels.cache.get(target);
+                if (c) {
+                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${ite
