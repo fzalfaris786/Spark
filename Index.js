@@ -257,17 +257,21 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId === 'modal_auto_response') {
+                if (interaction.customId === 'modal_auto_response') {
             const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
             const autoResponses = [];
 
             try {
                 if (bulkInput && bulkInput.trim().length > 0) {
                     const responseBlocks = bulkInput.split('||');
+                    
                     responseBlocks.forEach(block => {
-                        if (!block.includes(':')) return;
-                        const parts = block.split(':');
-                        const triggerWord = parts[0]?.trim().toLowerCase();
-                        const replyString = parts[1]?.trim();
+                        const firstColonIndex = block.indexOf(':');
+                        if (firstColonIndex === -1) return;
+
+                        const triggerWord = block.substring(0, firstColonIndex).trim().toLowerCase();
+                        // Pehle colon ke baad ka POORA text exact response banega
+                        const replyString = block.substring(firstColonIndex + 1).trim();
 
                         if (triggerWord && replyString) {
                             autoResponses.push({ trigger: triggerWord, replyText: replyString });
@@ -280,8 +284,7 @@ client.on('interactionCreate', async (interaction) => {
             } catch (err) {
                 return await interaction.editReply({ content: '❌ **Formatting Error!**' });
             }
-        }
-    }
+                }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
