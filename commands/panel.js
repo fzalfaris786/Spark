@@ -1,5 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const GuildConfig = require('../models/GuildConfig');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,6 +14,7 @@ module.exports = {
                 color: 0x5865F2
             };
 
+            // 5 Buttons max allowed in a single row
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('setup_tickets_btn')
@@ -35,77 +35,15 @@ module.exports = {
                     .setCustomId('setup_youtube_btn')
                     .setLabel('Setup YouTube')
                     .setEmoji('📺')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('setup_auto_btn')
+                    .setLabel('Auto Response')
+                    .setEmoji('💬')
+                    .setStyle(ButtonStyle.Primary) // Naya button auto response ke liye[span_2](start_span)[span_2](end_span)
             );
 
             return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        }
-
-        // --- BUTTON CLICKS HANDLING ---
-        if (interaction.isButton()) {
-            // SERVER STATS BUTTON
-            if (interaction.customId === 'setup_stats_btn') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_stats_setup') // Matched perfectly with Index.js
-                    .setTitle('📊 Server Stats Setup');
-
-                const totalInput = new TextInputBuilder()
-                    .setCustomId('stats_total_input')
-                    .setLabel('Total Members Voice Channel ID')
-                    .setPlaceholder('Paste total channel ID here...')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const onlineInput = new TextInputBuilder()
-                    .setCustomId('stats_online_input')
-                    .setLabel('Online Players Voice Channel ID')
-                    .setPlaceholder('Paste online channel ID here...')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(totalInput),
-                    new ActionRowBuilder().addComponents(onlineInput)
-                );
-
-                return await interaction.showModal(modal);
-            }
-
-            // 📺 YOUTUBE BUTTON (Matched perfectly with Index.js routing)
-            if (interaction.customId === 'setup_youtube_btn') {
-                const modal = new ModalBuilder()
-                    .setCustomId('youtube_modal_submit')
-                    .setTitle('📺 YouTube System Setup');
-
-                const ytIdInput = new TextInputBuilder()
-                    .setCustomId('yt_channel_id_input')
-                    .setLabel('YouTube Channel ID (e.g. UCxxxx...)')
-                    .setPlaceholder('Paste your YouTube Channel ID...')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const liveChanInput = new TextInputBuilder()
-                    .setCustomId('yt_live_chan_input')
-                    .setLabel('Live Stream Alert Channel ID')
-                    .setPlaceholder('Channel ID for Live alerts...')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const uploadChanInput = new TextInputBuilder()
-                    .setCustomId('yt_upload_chan_input')
-                    .setLabel('Uploads Alert Channel ID')
-                    .setPlaceholder('Channel ID for Video Upload alerts...')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(ytIdInput),
-                    new ActionRowBuilder().addComponents(liveChanInput),
-                    new ActionRowBuilder().addComponents(uploadChanInput)
-                );
-
-                return await interaction.showModal(modal);
-            }
         }
     }
 };
