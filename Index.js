@@ -1,3 +1,4 @@
+require('dotenv').config(); 
 const { Client, GatewayIntentBits, Collection, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 const fs = require('fs');
@@ -34,7 +35,25 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= WELCOME & INSTANT STATS ON JOIN (FIXED MENTIONS) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR =================
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.guild) return;
+
+    const userMessage = message.content.toLowerCase().trim();
+
+    try {
+        const config = await GuildConfig.findOne({ guildId: message.guild.id });
+        if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
+
+        // Tries to locate a saved configuration pattern that matches the chat message
+        const matched = config.autoResponses.find(r => r.trigger === userMessage);
+        if (matched && matched.replyText) {
+            return message.reply(matched.replyText);
+        }
+    } catch (err) { console.error("Auto response processing exception:", err); }
+});
+
+// ================= WELCOME & INSTANT STATS ON JOIN =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
@@ -43,15 +62,12 @@ client.on('guildMemberAdd', async (member) => {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
-                
-                // Parses user template references into interactive member mentions
                 descText = descText
                     .replace(/{user}/g, `${member}`)
                     .replace(/{{User.Mention}}/g, `${member}`)
                     .replace(/{{user.mention}}/g, `${member}`)
                     .replace(/{memberCount}/g, `${member.guild.memberCount}`);
                 
-                // Formats target account creation date into localized standard string
                 const createdAtFormatted = member.user.createdAt.toLocaleDateString('en-GB', {
                     day: 'numeric', month: 'long', year: 'numeric'
                 });
@@ -68,8 +84,6 @@ client.on('guildMemberAdd', async (member) => {
                 if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) {
                     embed.setImage(config.welcomeThumbnail);
                 }
-                
-                // Sends interactive user string outside embed context to ensure device compatibility
                 await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => null);
             }
         }
@@ -80,7 +94,6 @@ client.on('guildMemberAdd', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= INSTANT STATS ON LEAVE =================
 client.on('guildMemberRemove', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
@@ -142,6 +155,23 @@ client.on('interactionCreate', async (interaction) => {
             );
             return await interaction.showModal(modal);
         }
+
+        // NEW: Auto response config launcher button handler
+        if (interaction.customId === 'setup_auto_btn') {
+            const modal = new ModalBuilder().setCustomId('modal_auto_response').setTitle('💬 Auto Response Core');
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('auto_input_box')
+                        .setLabel('Format: trigger:reply || trigger:reply')
+                        .setPlaceholder('e.g., ip:play.sparklemc.in || upi:Scanner text || meow:ghop ghop 😼')
+                        .setRequired(true)
+                        .setStyle(TextInputStyle.Paragraph)
+                )
+            );
+            return await interaction.showModal(modal);
+        }
+
         if (interaction.customId === 'claim_ticket' || interaction.customId === 'close_ticket') {
             if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
                 return await interaction.reply({ content: '❌ Staff only.', ephemeral: true });
@@ -181,7 +211,6 @@ client.on('interactionCreate', async (interaction) => {
         if (interaction.customId === 'modal_ticket') {
             const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
             const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
-            
             const descData = interaction.fields.getTextInputValue('t_desc').split('||');
             const panelDescription = descData[0]?.trim();
             const panelImage = descData[1]?.trim() || '';
@@ -194,14 +223,8 @@ client.on('interactionCreate', async (interaction) => {
                 ticketMessage: interaction.fields.getTextInputValue('t_msg').trim()
             }, { upsert: true, new: true });
 
-            const embed = new EmbedBuilder()
-                .setTitle('🎫 Create a Ticket')
-                .setDescription(panelDescription)
-                .setColor('#5865F2');
-
-            if (panelImage && panelImage.startsWith('http')) {
-                embed.setImage(panelImage);
-            }
+            const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(panelDescription).setColor('#5865F2');
+            if (panelImage && panelImage.startsWith('http')) embed.setImage(panelImage);
 
             const options = cats.map(cat => ({ label: cat, value: cat }));
             const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
@@ -222,9 +245,35 @@ client.on('interactionCreate', async (interaction) => {
             await GuildConfig.findOneAndUpdate({ guildId }, { ytChannelId: ytId, ytLiveChannel: lId, ytUploadChannel: uId }, { upsert: true });
             return await interaction.editReply({ content: '✅ Connected YouTube!' });
         }
+
+        // NEW: Modal input data submission receiver
+        if (interaction.customId === 'modal_auto_response') {
+            const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
+            const autoResponses = [];
+
+            try {
+                if (bulkInput && bulkInput.trim().length > 0) {
+                    const responseBlocks = bulkInput.split('||');
+                    responseBlocks.forEach(block => {
+                        if (!block.includes(':')) return;
+                        const parts = block.split(':');
+                        const triggerWord = parts[0]?.trim().toLowerCase();
+                        const replyString = parts[1]?.trim();
+
+                        if (triggerWord && replyString) {
+                            autoResponses.push({ trigger: triggerWord, replyText: replyString });
+                        }
+                    });
+                }
+
+                await GuildConfig.findOneAndUpdate({ guildId }, { autoResponses }, { upsert: true });
+                return await interaction.editReply({ content: '✅ Custom auto-responses mapping matrices are now live!' });
+            } catch (err) {
+                return await interaction.editReply({ content: '❌ **Formatting Error!** Custom values syntax parser mismatch.' });
+            }
+        }
     }
 
-    // ================= TICKET CHANNEL SELECT INITIATION =================
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
         const config = await GuildConfig.findOne({ guildId });
         if (!config) return;
@@ -237,10 +286,8 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         await interaction.deferReply({ ephemeral: true });
-        
         const ch = await interaction.guild.channels.create({
-            name, 
-            parent: config.ticketParent || null,
+            name, parent: config.ticketParent || null,
             permissionOverwrites: [
                 { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
                 { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
@@ -249,25 +296,11 @@ client.on('interactionCreate', async (interaction) => {
         });
 
         let parsedMessage = config.ticketMessage || 'Thank you for contacting support.';
-        parsedMessage = parsedMessage
-            .replace(/{user}/g, `${interaction.user}`)
-            .replace(/{{User.Mention}}/g, `${interaction.user}`)
-            .replace(/{{user.mention}}/g, `${interaction.user}`);
+        parsedMessage = parsedMessage.replace(/{user}/g, `${interaction.user}`).replace(/{{User.Mention}}/g, `${interaction.user}`).replace(/{{user.mention}}/g, `${interaction.user}`);
+        if (config.ticketRole) parsedMessage = `${parsedMessage}\n\n🔔 **Staff Notification:** <@&${config.ticketRole}>`;
 
-        if (config.ticketRole) {
-            parsedMessage = `${parsedMessage}\n\n🔔 **Staff Notification:** <@&${config.ticketRole}>`;
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('🎫 Ticket Support Terminal')
-            .setDescription(parsedMessage)
-            .addFields({ name: '🗂️ Category', value: `\`${selectedCategory}\``, inline: false })
-            .setColor('#00ffcc');
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), 
-            new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
-        );
+        const embed = new EmbedBuilder().setTitle('🎫 Ticket Support Terminal').setDescription(parsedMessage).addFields({ name: '🗂️ Category', value: `\`${selectedCategory}\``, inline: false }).setColor('#00ffcc');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
 
         await ch.send({ embeds: [embed], components: [row] });
         await interaction.editReply({ content: `Generated: ${ch}` });
@@ -302,15 +335,4 @@ setInterval(async () => {
             const isLive = item.title.toLowerCase().includes('live') || item.title.toLowerCase().includes('stream');
             const target = isLive ? config.ytLiveChannel : config.ytUploadChannel;
             if (target) {
-                const c = g.channels.cache.get(target);
-                if (c) {
-                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
-                    await c.send({ content: msg }).catch(() => null);
-                }
-            }
-        }
-    } catch (e) { console.error(e); }
-}, 300000);
-
-client.login(process.env.DISCORD_TOKEN);
-                    
+                const c = g.channels.cache.g
