@@ -14,7 +14,7 @@ module.exports = {
     async execute(interaction) {
         const botMessage = interaction.options.getString('message');
         
-        // Target channel me bolne ke baad trigger interaction ko acknowledge karega
+        // Sends the message to the current channel and acknowledges the interaction privately
         await interaction.channel.send({ content: botMessage });
         return await interaction.reply({ content: '✅ Message sent successfully!', ephemeral: true });
     }
