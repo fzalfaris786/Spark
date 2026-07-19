@@ -329,3 +329,11 @@ setInterval(async () => {
                 if (c) {
                     const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
                     await c.send({ content: msg }).c
+
+                    }
+        }
+    } catch (e) { console.error(e); }
+}, 300000); // <-- Ye loop yahan khatam ho rha hai
+
+client.login(process.env.DISCORD_TOKEN); // <-- Ye line sabse end me add kar do
+
