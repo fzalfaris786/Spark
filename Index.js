@@ -38,10 +38,13 @@ client.once('ready', async () => {
 // ================= DYNAMIC AUTO RESPONSE INTERCEPTOR =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
+
     const userMessage = message.content.toLowerCase().trim();
+
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
+
         const matched = config.autoResponses.find(r => r.trigger === userMessage);
         if (matched && matched.replyText) {
             return message.reply(matched.replyText);
@@ -244,6 +247,7 @@ client.on('interactionCreate', async (interaction) => {
         if (interaction.customId === 'modal_auto_response') {
             const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
             const autoResponses = [];
+
             try {
                 if (bulkInput && bulkInput.trim().length > 0) {
                     const responseBlocks = bulkInput.split('||');
@@ -252,11 +256,13 @@ client.on('interactionCreate', async (interaction) => {
                         const parts = block.split(':');
                         const triggerWord = parts[0]?.trim().toLowerCase();
                         const replyString = parts[1]?.trim();
+
                         if (triggerWord && replyString) {
                             autoResponses.push({ trigger: triggerWord, replyText: replyString });
                         }
                     });
                 }
+
                 await GuildConfig.findOneAndUpdate({ guildId }, { autoResponses }, { upsert: true });
                 return await interaction.editReply({ content: '✅ Custom auto-responses setup live!' });
             } catch (err) {
@@ -271,6 +277,7 @@ client.on('interactionCreate', async (interaction) => {
         
         const selectedCategory = interaction.values[0]; 
         const name = `ticket-${interaction.user.username.toLowerCase()}`;
+        
         if (interaction.guild.channels.cache.find(c => c.name === name)) {
             return await interaction.reply({ content: '❌ You already have an active ticket.', ephemeral: true });
         }
@@ -328,12 +335,12 @@ setInterval(async () => {
                 const c = g.channels.cache.get(target);
                 if (c) {
                     const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
-                    await c.send({ content: msg }).c
-
-                    }
+                    await c.send({ content: msg }).catch(() => null);
+                }
+            }
         }
-    } catch (e) { console.error(e); }
-}, 300000); // <-- Ye loop yahan khatam ho rha hai
+    } catch (e) { console.error("Refresh Loop Error: ", e); }
+}, 300000);
 
-client.login(process.env.DISCORD_TOKEN); // <-- Ye line sabse end me add kar do
-
+client.login(process.env.DISCORD_TOKEN);
+            
