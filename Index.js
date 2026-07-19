@@ -35,17 +35,20 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (SMART MATCH) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    const userMessage = message.content.toLowerCase().trim();
+    // Poori chat ko lowercase me convert kar diya taaki IP/Ip/ip/iP ka jhanjhat khatam
+    const userMessage = message.content.toLowerCase();
 
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        const matched = config.autoResponses.find(r => r.trigger === userMessage);
+        // Ab ye check karega ki player ki message me trigger word kahin bhi include hai ya nahi
+        const matched = config.autoResponses.find(r => userMessage.includes(r.trigger));
+        
         if (matched && matched.replyText) {
             return message.reply(matched.replyText);
         }
