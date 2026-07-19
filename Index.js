@@ -264,9 +264,9 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 await GuildConfig.findOneAndUpdate({ guildId }, { autoResponses }, { upsert: true });
-                return await interaction.editReply({ content: '✅ Custom auto-responses mapping matrices are now live!' });
+                return await interaction.editReply({ content: '✅ Custom auto-responses setup live!' });
             } catch (err) {
-                return await interaction.editReply({ content: '❌ **Formatting Error!** Custom values syntax parser mismatch.' });
+                return await interaction.editReply({ content: '❌ **Formatting Error!** Custom values parser mismatch.' });
             }
         }
     }
@@ -334,4 +334,5 @@ setInterval(async () => {
             if (target) {
                 const c = g.channels.cache.get(target);
                 if (c) {
-                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${ite
+                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
+      
