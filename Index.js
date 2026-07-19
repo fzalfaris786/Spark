@@ -35,31 +35,28 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (EMBED FORMAT) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (EXACT WORD MATCH) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // Poori chat ko lowercase me convert kar diya taaki IP/Ip/ip ka jhanjhat na rahe
-    const userMessage = message.content.toLowerCase();
+    // Chat ko lowercase karke uske saare shabdon ko alag-alag (array me) baant diya
+    const words = message.content.toLowerCase().split(/\s+/);
 
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Check karega ki player ke message me trigger word kahin bhi hai ya nahi
-        const matched = config.autoResponses.find(r => userMessage.includes(r.trigger));
+        // Ab ye check karega ki kya trigger word ek alag shabad ke roop me array me maujood hai
+        const matched = config.autoResponses.find(r => words.includes(r.trigger));
         
         if (matched && matched.replyText) {
-            // New lines (\n) ko perfectly process karne ke liye
             const formattedReply = matched.replyText.replace(/\\n/g, '\n');
 
-            // Ek shaandar Embed taiyar kiya response ke liye
             const responseEmbed = new EmbedBuilder()
                 .setDescription(formattedReply)
-                .setColor("Blue") // Aap ise apne hisab se "Gold", "Red" ya hex code bhi de sakte ho
+                .setColor("Blue")
                 .setTimestamp();
 
-            // Direct channel me embed send karega aur player ko reply form me dikhega
             return message.reply({ embeds: [responseEmbed] });
         }
     } catch (err) { console.error("Auto response processing exception:", err); }
