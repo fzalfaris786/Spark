@@ -35,22 +35,32 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error(e); }
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (SMART MATCH) =================
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR (EMBED FORMAT) =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // Poori chat ko lowercase me convert kar diya taaki IP/Ip/ip/iP ka jhanjhat khatam
+    // Poori chat ko lowercase me convert kar diya taaki IP/Ip/ip ka jhanjhat na rahe
     const userMessage = message.content.toLowerCase();
 
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        // Ab ye check karega ki player ki message me trigger word kahin bhi include hai ya nahi
+        // Check karega ki player ke message me trigger word kahin bhi hai ya nahi
         const matched = config.autoResponses.find(r => userMessage.includes(r.trigger));
         
         if (matched && matched.replyText) {
-            return message.reply(matched.replyText);
+            // New lines (\n) ko perfectly process karne ke liye
+            const formattedReply = matched.replyText.replace(/\\n/g, '\n');
+
+            // Ek shaandar Embed taiyar kiya response ke liye
+            const responseEmbed = new EmbedBuilder()
+                .setDescription(formattedReply)
+                .setColor("Blue") // Aap ise apne hisab se "Gold", "Red" ya hex code bhi de sakte ho
+                .setTimestamp();
+
+            // Direct channel me embed send karega aur player ko reply form me dikhega
+            return message.reply({ embeds: [responseEmbed] });
         }
     } catch (err) { console.error("Auto response processing exception:", err); }
 });
