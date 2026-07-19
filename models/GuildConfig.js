@@ -27,7 +27,7 @@ const GuildConfigSchema = new mongoose.Schema({
     ytUploadChannel: { type: String, default: null },
     ytLastVideoId: { type: String, default: null },
 
-    // NEW: 3 Auto Responses dynamically manage karne ke liye
+    // Dynamic Database matrix configuration for Auto Responses
     autoResponses: [
         {
             trigger: { type: String, lowercase: true, trim: true },
