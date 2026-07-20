@@ -179,6 +179,15 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
+            if (interaction.customId === 'setup_stats_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Voice ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Voice ID').setRequired(true).setStyle(TextInputStyle.Short))
+                );
+                return await interaction.showModal(modal);
+            }
+
             if (interaction.customId === 'setup_youtube_btn') {
                 const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
                 modal.addComponents(
@@ -276,11 +285,18 @@ client.on('interactionCreate', async (interaction) => {
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
             }
-                    }
+                }
         
                 // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
+
+            if (interaction.customId === 'modal_stats_setup') {
+                const tId = interaction.fields.getTextInputValue('stats_total_input').trim();
+                const oId = interaction.fields.getTextInputValue('stats_online_input').trim();
+                await GuildConfig.findOneAndUpdate({ guildId }, { totalMembersChan: tId, onlinePlayersChan: oId }, { upsert: true });
+                return await interaction.editReply({ content: '✅ **Saved Stats Configuration Successfully!** Voice channels connected.' });
+            }
 
             if (interaction.customId === 'youtube_modal_submit') {
                 const ytId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
@@ -483,10 +499,23 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= TIMED LOOP (12H REMINDERS + YT NOTIFIER) =================
+// ================= TIMED LOOP (STATS REFRESH + 12H REMINDERS + YT NOTIFIER) =================
 setInterval(async () => {
     try {
-        // 1. Pending Order 12h Reminders
+        // 1. Live Server Stats Refresh Loop
+        const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
+        for (const config of stats) {
+            const g = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!g) continue;
+            const mems = await g.members.fetch({ withPresences: true }).catch(() => null);
+            const on = mems ? mems.filter(m => m.presence && m.presence.status !== 'offline').size : 0;
+            if (config.onlinePlayersChan) {
+                const chan = g.channels.cache.get(config.onlinePlayersChan);
+                if (chan) await chan.setName(`🟢 Online Players: ${on}`).catch(() => null);
+            }
+        }
+
+        // 2. Pending Order 12h Reminders
         const twelveHoursAgo = new Date(Date.now() - (12 * 60 * 60 * 1000));
         const pendingTickets = await OrderTicket.find({ lastReminderSent: { $lte: twelveHoursAgo } });
 
@@ -506,7 +535,7 @@ setInterval(async () => {
             }
         }
 
-        // 2. YouTube Live & Upload Notifier
+        // 3. YouTube Live & Upload Notifier
         const yts = await GuildConfig.find({ ytChannelId: { $ne: null } });
         for (const config of yts) {
             const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
