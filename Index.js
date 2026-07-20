@@ -138,48 +138,49 @@ client.on('interactionCreate', async (interaction) => {
         // 2. BUTTONS HANDLER
         if (interaction.isButton()) {
             // --- STORE SETUP DASHBOARD BUTTONS ---
-            if (interaction.customId === 'setup_store_cfg') {
-                const modal = new ModalBuilder().setCustomId('modal_store_cfg').setTitle('1. Basic Setup & Stock');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_name').setLabel('Server Name (For DMs)').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_role').setLabel('Admin/Staff Role ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_logs').setLabel('Logs Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_items').setLabel('Items (Format: Cat:Name-Price || Cat:Name-Price)').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Ranks:Elite-100 || Keys:Shine Key-50'))
-                );
-                return await interaction.showModal(modal);
-            }
+                        if (interaction.customId === 'setup_store_cfg') {
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_store_cfg')
+                    .setTitle('1. Basic Setup & Stock');
 
-            if (interaction.customId === 'setup_store_visual') {
-                const modal = new ModalBuilder().setCustomId('modal_store_visual').setTitle('2. Visual Panel Deploy');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_title').setLabel('Embed Header Title').setRequired(true).setStyle(TextInputStyle.Short).setValue('🛒 SERVER STOREFRONT')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_desc').setLabel('Embed Description Markdown').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue('Select a category below to view items.')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_banner').setLabel('Banner Image CDN Link').setRequired(false).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_chan').setLabel('Target Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
-                );
-                return await interaction.showModal(modal);
-            }
+                const nameInput = new TextInputBuilder()
+                    .setCustomId('cfg_name')
+                    .setLabel('Server Name')
+                    .setRequired(true)
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('e.g., SparkleMc');
 
-            if (interaction.customId === 'setup_store_execution') {
-                const modal = new ModalBuilder().setCustomId('modal_store_execution').setTitle('3. Console & Commands');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_console').setLabel('Console Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_cmds').setLabel('Command Map (ItemName:cmd || ItemName:cmd)').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Elite:lp user {name} parent set elite || Shine Key:givekey {name} shine 1'))
-                );
-                return await interaction.showModal(modal);
-            }
+                const roleInput = new TextInputBuilder()
+                    .setCustomId('cfg_role')
+                    .setLabel('Admin Role ID')
+                    .setRequired(true)
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('e.g., 123456789012345678');
 
-            if (interaction.customId === 'setup_store_dms') {
-                const store = await GuildStore.findOne({ guildId });
-                const modal = new ModalBuilder().setCustomId('modal_store_dms').setTitle('4. DM Alert Templates');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_app').setLabel('Approved DM Text (Use {{server}}, {{item}})').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmApproved || "📦 Order Approved [{{server}}]! Item: {{item}}")),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_rej').setLabel('Rejected DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmRejected || "❌ Order Rejected [{{server}}]! Item: {{item}}")),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_pend').setLabel('12h Pending Reminder DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmPendingReminder || "⏰ Pending Order Reminder [{{server}}]! Item: {{item}}"))
-                );
-                return await interaction.showModal(modal);
-            }
+                const logsInput = new TextInputBuilder()
+                    .setCustomId('cfg_logs')
+                    .setLabel('Logs Channel ID')
+                    .setRequired(true)
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('e.g., 123456789012345678');
 
+                const itemsInput = new TextInputBuilder()
+                    .setCustomId('cfg_items')
+                    .setLabel('Items & Stock Setup')
+                    .setRequired(true)
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setPlaceholder('Ranks:Elite-100 || Keys:Shine Key-50');
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(nameInput),
+                    new ActionRowBuilder().addComponents(roleInput),
+                    new ActionRowBuilder().addComponents(logsInput),
+                    new ActionRowBuilder().addComponents(itemsInput)
+                );
+
+                return await interaction.showModal(modal);
+                        }
+            
             // --- CHECKOUT & ORDER BUTTONS ---
             if (interaction.customId.startsWith('btn_trigger_checkout_')) {
                 const itemObjectId = interaction.customId.replace('btn_trigger_checkout_', '');
