@@ -122,7 +122,7 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (100% BULLETPROOF ROUTER) =================
+// ================= DYNAMIC INTERACTIONS (INTERCEPTOR ROUTER) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
@@ -137,7 +137,6 @@ client.on('interactionCreate', async (interaction) => {
 
         // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
-            // --- STORE CONTROL PANEL SETUP BUTTONS ---
             if (interaction.customId === 'setup_store_cfg') {
                 const modal = new ModalBuilder().setCustomId('modal_store_cfg').setTitle('1. Basic Setup & Stock');
                 modal.addComponents(
@@ -180,7 +179,16 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // --- MAIN GENERAL BOT DASHBOARD BUTTONS (SUPPORT / WELCOME / STATS) ---
+            if (interaction.customId === 'setup_youtube_btn') {
+                const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Upload Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
+                );
+                return await interaction.showModal(modal);
+            }
+
             if (interaction.customId === 'setup_welcome_btn') {
                 const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
                 modal.addComponents(
@@ -220,7 +228,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // --- CHECKOUT & TICKET ROOM HANDLERS ---
             if (interaction.customId.startsWith('btn_trigger_checkout_')) {
                 const itemObjectId = interaction.customId.replace('btn_trigger_checkout_', '');
                 const playerModal = new ModalBuilder().setCustomId(`modal_player_checkout_${itemObjectId}`).setTitle('Player Verification');
@@ -269,11 +276,19 @@ client.on('interactionCreate', async (interaction) => {
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
             }
-        }
-
-        // 3. MODAL SUBMISSIONS HANDLER
+                    }
+        
+                // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
+
+            if (interaction.customId === 'youtube_modal_submit') {
+                const ytId = interaction.fields.getTextInputValue('yt_channel_id_input').trim();
+                const lId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
+                const uId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
+                await GuildConfig.findOneAndUpdate({ guildId }, { ytChannelId: ytId, ytLiveChannel: lId, ytUploadChannel: uId }, { upsert: true });
+                return await interaction.editReply({ content: '✅ **Connected YouTube System Successfully!** Alerts enabled.' });
+            }
 
             if (interaction.customId === 'modal_store_cfg') {
                 const serverName = interaction.fields.getTextInputValue('cfg_name');
@@ -468,9 +483,10 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= 12-HOUR AUTOMATIC PENDING ORDER DM REMINDER LOOP =================
+// ================= TIMED LOOP (12H REMINDERS + YT NOTIFIER) =================
 setInterval(async () => {
     try {
+        // 1. Pending Order 12h Reminders
         const twelveHoursAgo = new Date(Date.now() - (12 * 60 * 60 * 1000));
         const pendingTickets = await OrderTicket.find({ lastReminderSent: { $lte: twelveHoursAgo } });
 
@@ -489,7 +505,30 @@ setInterval(async () => {
                 await ticket.save();
             }
         }
-    } catch (e) { console.error("12h DM Loop Exception:", e); }
+
+        // 2. YouTube Live & Upload Notifier
+        const yts = await GuildConfig.find({ ytChannelId: { $ne: null } });
+        for (const config of yts) {
+            const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
+            if (!feed || !feed.items || feed.items.length === 0) continue;
+            const item = feed.items[0];
+            const vId = item.id.replace('yt:video:', '');
+            if (config.ytLastVideoId === vId) continue;
+            config.ytLastVideoId = vId;
+            await config.save();
+            const g = await client.guilds.fetch(config.guildId).catch(() => null);
+            if (!g) continue;
+            const isLive = item.title.toLowerCase().includes('live') || item.title.toLowerCase().includes('stream');
+            const target = isLive ? config.ytLiveChannel : config.ytUploadChannel;
+            if (target) {
+                const c = g.channels.cache.get(target);
+                if (c) {
+                    const msg = isLive ? `🔴 **LIVE NOW!** \n📢 **${item.title}**\n👉 ${item.link} @everyone` : `🎬 **NEW UPLOAD!** \n📢 **${item.title}**\n👉 ${item.link} @everyone`;
+                    await c.send({ content: msg }).catch(() => null);
+                }
+            }
+        }
+    } catch (e) { console.error("Background Loop Exception:", e); }
 }, 300000);
 
 client.login(process.env.DISCORD_TOKEN);
