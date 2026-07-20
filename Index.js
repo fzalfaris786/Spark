@@ -122,7 +122,7 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (INTERCEPTOR ROUTER) =================
+// ================= DYNAMIC INTERACTIONS (COMPLETE ROUTER) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
@@ -210,7 +210,7 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            if (interaction.customId === 'setup_tickets_btn') {
+            if (interaction.customId === 'setup_tickets_btn' || interaction.customId === 'setup_ticket_btn') {
                 const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
                 modal.addComponents(
                     new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
@@ -235,6 +235,29 @@ client.on('interactionCreate', async (interaction) => {
                     )
                 );
                 return await interaction.showModal(modal);
+            }
+
+            // --- SUPPORT TICKET ACTIONS ---
+            const config = await GuildConfig.findOne({ guildId });
+            if (interaction.customId === 'claim_ticket') {
+                if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
+                    return await interaction.reply({ content: '❌ Staff only.', ephemeral: true });
+                }
+                await interaction.reply({ content: `🔒 Ticket claimed by ${interaction.user}` });
+                return await interaction.message.edit({ components: [interaction.message.components[0]] });
+            }
+
+            if (interaction.customId === 'close_ticket') {
+                await interaction.reply('🔒 Closing channel in 5 seconds...');
+                const fetched = await interaction.channel.messages.fetch({ limit: 100 });
+                let txt = '';
+                [...fetched.values()].reverse().forEach(m => { txt += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`; });
+                const attachment = new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: 'transcript.txt' });
+                if (config && config.ticketLogs) {
+                    const c = interaction.guild.channels.cache.get(config.ticketLogs);
+                    if (c) await c.send({ content: `🗑️ Closed by ${interaction.user.tag}`, files: [attachment] }).catch(() => null);
+                }
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
             }
 
             if (interaction.customId.startsWith('btn_trigger_checkout_')) {
@@ -285,11 +308,35 @@ client.on('interactionCreate', async (interaction) => {
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
             }
-                }
-        
-                // 3. MODAL SUBMISSIONS HANDLER
+        }
+            
+                    // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
+
+            if (interaction.customId === 'modal_ticket') {
+                const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
+                const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
+                const descData = interaction.fields.getTextInputValue('t_desc').split('||');
+                const panelDescription = descData[0]?.trim();
+                const panelImage = descData[1]?.trim() || '';
+
+                await GuildConfig.findOneAndUpdate({ guildId }, {
+                    ticketDescription: panelDescription,
+                    ticketParent: interaction.fields.getTextInputValue('t_parent'),
+                    ticketLogs: logsData[0]?.trim(),
+                    ticketRole: logsData[1]?.trim(),
+                    ticketMessage: interaction.fields.getTextInputValue('t_msg').trim()
+                }, { upsert: true, new: true });
+
+                const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(panelDescription).setColor('#5865F2');
+                if (panelImage && panelImage.startsWith('http')) embed.setImage(panelImage);
+
+                const options = cats.map(cat => ({ label: cat, value: cat }));
+                const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
+                await interaction.channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
+                return await interaction.editReply({ content: '✅ Deployed Support Tickets Panel Successfully!' });
+            }
 
             if (interaction.customId === 'modal_stats_setup') {
                 const tId = interaction.fields.getTextInputValue('stats_total_input').trim();
@@ -304,6 +351,17 @@ client.on('interactionCreate', async (interaction) => {
                 const uId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
                 await GuildConfig.findOneAndUpdate({ guildId }, { ytChannelId: ytId, ytLiveChannel: lId, ytUploadChannel: uId }, { upsert: true });
                 return await interaction.editReply({ content: '✅ **Connected YouTube System Successfully!** Alerts enabled.' });
+            }
+
+            if (interaction.customId === 'modal_welcome') {
+                await GuildConfig.findOneAndUpdate({ guildId }, {
+                    welcomeTitle: interaction.fields.getTextInputValue('w_title'),
+                    welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
+                    welcomeChannel: interaction.fields.getTextInputValue('w_chan'),
+                    welcomeThumbnail: interaction.fields.getTextInputValue('w_thumb') || '',
+                    welcomeDm: interaction.fields.getTextInputValue('w_dm') || ''
+                }, { upsert: true });
+                return await interaction.editReply({ content: '✅ Saved Welcome Settings!' });
             }
 
             if (interaction.customId === 'modal_store_cfg') {
@@ -464,8 +522,40 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. SELECT MENUS HANDLER
+        // 4. SELECT MENUS HANDLER (SUPPORT TICKETS + STORE)
         if (interaction.isStringSelectMenu()) {
+            if (interaction.customId === 'ticket_select') {
+                const config = await GuildConfig.findOne({ guildId });
+                if (!config) return;
+
+                const selectedCategory = interaction.values[0]; 
+                const name = `ticket-${interaction.user.username.toLowerCase()}`;
+                
+                if (interaction.guild.channels.cache.find(c => c.name === name)) {
+                    return await interaction.reply({ content: '❌ You already have an active ticket.', ephemeral: true });
+                }
+                
+                await interaction.deferReply({ ephemeral: true });
+                const ch = await interaction.guild.channels.create({
+                    name, parent: config.ticketParent || null,
+                    permissionOverwrites: [
+                        { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+                        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                        ...(config.ticketRole ? [{ id: config.ticketRole, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }] : [])
+                    ]
+                });
+
+                let parsedMessage = config.ticketMessage || 'Thank you for contacting support.';
+                parsedMessage = parsedMessage.replace(/{user}/g, `${interaction.user}`).replace(/{{User.Mention}}/g, `${interaction.user}`).replace(/{{user.mention}}/g, `${interaction.user}`);
+                if (config.ticketRole) parsedMessage = `${parsedMessage}\n\n🔔 **Staff Notification:** <@&${config.ticketRole}>`;
+
+                const embed = new EmbedBuilder().setTitle('🎫 Ticket Support Terminal').setDescription(parsedMessage).addFields({ name: '🗂️ Category', value: `\`${selectedCategory}\``, inline: false }).setColor('#00ffcc');
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claim').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger));
+
+                await ch.send({ embeds: [embed], components: [row] });
+                return await interaction.editReply({ content: `Generated: ${ch}` });
+            }
+
             const store = await GuildStore.findOne({ guildId });
             if (!store) return;
 
@@ -499,10 +589,9 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= TIMED LOOP (STATS REFRESH + 12H REMINDERS + YT NOTIFIER) =================
+// ================= TIMED LOOP =================
 setInterval(async () => {
     try {
-        // 1. Live Server Stats Refresh Loop
         const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
         for (const config of stats) {
             const g = await client.guilds.fetch(config.guildId).catch(() => null);
@@ -515,7 +604,6 @@ setInterval(async () => {
             }
         }
 
-        // 2. Pending Order 12h Reminders
         const twelveHoursAgo = new Date(Date.now() - (12 * 60 * 60 * 1000));
         const pendingTickets = await OrderTicket.find({ lastReminderSent: { $lte: twelveHoursAgo } });
 
@@ -535,7 +623,6 @@ setInterval(async () => {
             }
         }
 
-        // 3. YouTube Live & Upload Notifier
         const yts = await GuildConfig.find({ ytChannelId: { $ne: null } });
         for (const config of yts) {
             const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${config.ytChannelId}`).catch(() => null);
