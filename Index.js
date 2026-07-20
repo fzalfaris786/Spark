@@ -122,66 +122,105 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (SAFE HANDLER) =================
+// ================= DYNAMIC INTERACTIONS (100% BULLETPROOF ROUTER) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
         if (!guildId) return;
 
-        // 1. SLASH COMMANDS ROUTER
+        // 1. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
-        // 2. BUTTONS HANDLER
+        // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
-            // --- STORE SETUP DASHBOARD BUTTONS ---
-                        if (interaction.customId === 'setup_store_cfg') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_store_cfg')
-                    .setTitle('1. Basic Setup & Stock');
-
-                const nameInput = new TextInputBuilder()
-                    .setCustomId('cfg_name')
-                    .setLabel('Server Name')
-                    .setRequired(true)
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g., SparkleMc');
-
-                const roleInput = new TextInputBuilder()
-                    .setCustomId('cfg_role')
-                    .setLabel('Admin Role ID')
-                    .setRequired(true)
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g., 123456789012345678');
-
-                const logsInput = new TextInputBuilder()
-                    .setCustomId('cfg_logs')
-                    .setLabel('Logs Channel ID')
-                    .setRequired(true)
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('e.g., 123456789012345678');
-
-                const itemsInput = new TextInputBuilder()
-                    .setCustomId('cfg_items')
-                    .setLabel('Items & Stock Setup')
-                    .setRequired(true)
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setPlaceholder('Ranks:Elite-100 || Keys:Shine Key-50');
-
+            // --- STORE CONTROL PANEL SETUP BUTTONS ---
+            if (interaction.customId === 'setup_store_cfg') {
+                const modal = new ModalBuilder().setCustomId('modal_store_cfg').setTitle('1. Basic Setup & Stock');
                 modal.addComponents(
-                    new ActionRowBuilder().addComponents(nameInput),
-                    new ActionRowBuilder().addComponents(roleInput),
-                    new ActionRowBuilder().addComponents(logsInput),
-                    new ActionRowBuilder().addComponents(itemsInput)
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_name').setLabel('Server Name').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., SparkleMc')),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_role').setLabel('Admin Role ID').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., 123456789012345678')),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_logs').setLabel('Logs Channel ID').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., 123456789012345678')),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_items').setLabel('Items & Stock Setup').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Ranks:Elite-100 || Keys:Shine Key-50'))
                 );
-
                 return await interaction.showModal(modal);
-                        }
-            
-            // --- CHECKOUT & ORDER BUTTONS ---
+            }
+
+            if (interaction.customId === 'setup_store_visual') {
+                const modal = new ModalBuilder().setCustomId('modal_store_visual').setTitle('2. Visual Panel Deploy');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_title').setLabel('Embed Header Title').setRequired(true).setStyle(TextInputStyle.Short).setValue('🛒 SERVER STOREFRONT')),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_desc').setLabel('Embed Description Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue('Select a category below to view items.')),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_banner').setLabel('Banner Image CDN Link').setRequired(false).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_chan').setLabel('Target Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_store_execution') {
+                const modal = new ModalBuilder().setCustomId('modal_store_execution').setTitle('3. Console & Commands');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_console').setLabel('Console Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_cmds').setLabel('Command Mappings').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Elite:lp user {name} parent set elite || Shine Key:givekey {name} shine 1'))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_store_dms') {
+                const store = await GuildStore.findOne({ guildId });
+                const modal = new ModalBuilder().setCustomId('modal_store_dms').setTitle('4. DM Alert Templates');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_app').setLabel('Approved DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmApproved || "📦 Order Approved [{{server}}]! Item: {{item}}")),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_rej').setLabel('Rejected DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmRejected || "❌ Order Rejected [{{server}}]! Item: {{item}}")),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_pend').setLabel('12h Pending Reminder DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmPendingReminder || "⏰ Pending Order Reminder [{{server}}]! Item: {{item}}"))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            // --- MAIN GENERAL BOT DASHBOARD BUTTONS (SUPPORT / WELCOME / STATS) ---
+            if (interaction.customId === 'setup_welcome_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner Image URL').setRequired(false).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text').setRequired(false).setStyle(TextInputStyle.Paragraph))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_tickets_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Categories (Comma separated)').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Category ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message').setRequired(true).setStyle(TextInputStyle.Paragraph))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_auto_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_auto_response').setTitle('💬 Auto Response Core');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('auto_input_box')
+                            .setLabel('Format: trigger:reply || trigger:reply')
+                            .setPlaceholder('e.g., ip:play.sparklemc.in || upi:Scanner text')
+                            .setRequired(true)
+                            .setStyle(TextInputStyle.Paragraph)
+                    )
+                );
+                return await interaction.showModal(modal);
+            }
+
+            // --- CHECKOUT & TICKET ROOM HANDLERS ---
             if (interaction.customId.startsWith('btn_trigger_checkout_')) {
                 const itemObjectId = interaction.customId.replace('btn_trigger_checkout_', '');
                 const playerModal = new ModalBuilder().setCustomId(`modal_player_checkout_${itemObjectId}`).setTitle('Player Verification');
@@ -191,18 +230,12 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(playerModal);
             }
 
-            // --- ORDER MANAGEMENT TICKETS BUTTONS ---
             const ticket = await OrderTicket.findOne({ channelId: interaction.channel.id });
             if (ticket) {
                 const store = await GuildStore.findOne({ guildId });
-                if (store && store.adminRoleId && !interaction.member.roles.cache.has(store.adminRoleId) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                    return await interaction.reply({ content: '❌ Staff clearance required.', ephemeral: true });
-                }
-
                 if (interaction.customId === 'btn_order_approve') {
                     await interaction.deferReply();
                     const storeItem = store?.items.find(i => i.name.toLowerCase() === ticket.itemName.toLowerCase());
-                    
                     if (store?.consoleChannelId && storeItem && storeItem.command) {
                         const consoleChan = interaction.guild.channels.cache.get(store.consoleChannelId);
                         if (consoleChan) {
@@ -210,16 +243,12 @@ client.on('interactionCreate', async (interaction) => {
                             await consoleChan.send({ content: finalCmd });
                         }
                     }
-
                     const buyer = await interaction.client.users.fetch(ticket.buyerId).catch(() => null);
                     if (buyer) {
-                        const msg = (store?.dmApproved || "📦 Order Approved!")
-                            .replace(/{{server}}/g, store?.serverName || "Server")
-                            .replace(/{{item}}/g, ticket.itemName);
+                        const msg = (store?.dmApproved || "📦 Order Approved!").replace(/{{server}}/g, store?.serverName || "Server").replace(/{{item}}/g, ticket.itemName);
                         await buyer.send({ content: msg }).catch(() => null);
                     }
-
-                    await interaction.editReply({ content: '✅ **Order Approved!** Automation scripts fired command.' });
+                    await interaction.editReply({ content: '✅ **Order Approved!** Command executed.' });
                     return await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_order_delete').setLabel('Delete Room').setStyle(ButtonStyle.Secondary))] });
                 }
 
@@ -227,35 +256,15 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.deferReply();
                     const buyer = await interaction.client.users.fetch(ticket.buyerId).catch(() => null);
                     if (buyer) {
-                        const msg = (store?.dmRejected || "❌ Order Rejected!")
-                            .replace(/{{server}}/g, store?.serverName || "Server")
-                            .replace(/{{item}}/g, ticket.itemName);
+                        const msg = (store?.dmRejected || "❌ Order Rejected!").replace(/{{server}}/g, store?.serverName || "Server").replace(/{{item}}/g, ticket.itemName);
                         await buyer.send({ content: msg }).catch(() => null);
                     }
-
                     await interaction.editReply({ content: '🚫 **Order Rejected!** Buyer notified.' });
                     return await interaction.message.edit({ components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_order_delete').setLabel('Delete Room').setStyle(ButtonStyle.Secondary))] });
                 }
 
                 if (interaction.customId === 'btn_order_delete') {
-                    await interaction.reply({ content: '🗑️ Saving logs and deleting room in 5 seconds...' });
-                    const fetched = await interaction.channel.messages.fetch({ limit: 100 });
-                    let txt = '';
-                    [...fetched.values()].reverse().forEach(m => { txt += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`; });
-                    const attachment = new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: 'transcript.txt' });
-
-                    if (store && store.logsChannelId) {
-                        const logsChan = interaction.guild.channels.cache.get(store.logsChannelId);
-                        if (logsChan) {
-                            const embed = new EmbedBuilder().setTitle('📊 ORDER ARCHIVED LOGS').setColor('#36393F')
-                                .addFields(
-                                    { name: 'Buyer', value: `<@${ticket.buyerId}>`, inline: true },
-                                    { name: 'Item', value: `${ticket.itemName}`, inline: true },
-                                    { name: 'IGN', value: `\`${ticket.buyerIGN}\``, inline: true }
-                                );
-                            await logsChan.send({ embeds: [embed], files: [attachment] }).catch(() => null);
-                        }
-                    }
+                    await interaction.reply({ content: '🗑️ Closing space arrays permanently in 5 seconds...' });
                     await OrderTicket.deleteOne({ channelId: interaction.channel.id });
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
@@ -280,12 +289,9 @@ client.on('interactionCreate', async (interaction) => {
                     categoryBlocks.forEach(block => {
                         const parts = block.split(':');
                         if (parts.length < 2) return;
-
                         const catName = parts[0].trim();
                         const itemsRaw = parts[1].split(',');
-
                         if (!categories.includes(catName) && catName) categories.push(catName);
-
                         itemsRaw.forEach(iRaw => {
                             const itemParts = iRaw.split('-');
                             if (itemParts.length < 2) return;
@@ -341,7 +347,6 @@ client.on('interactionCreate', async (interaction) => {
                     const parts = mapping.split(':');
                     const iName = parts[0]?.trim();
                     const iCmd = parts[1]?.trim();
-
                     const matchedItem = store.items.find(i => i.name.toLowerCase() === iName.toLowerCase());
                     if (matchedItem) matchedItem.command = iCmd;
                 });
@@ -357,6 +362,25 @@ client.on('interactionCreate', async (interaction) => {
 
                 await GuildStore.findOneAndUpdate({ guildId }, { dmApproved, dmRejected, dmPendingReminder }, { upsert: true });
                 return await interaction.editReply({ content: '✅ **Button 4 Complete!** Custom DM Alert templates saved.' });
+            }
+
+            if (interaction.customId === 'modal_auto_response') {
+                const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
+                const autoResponses = [];
+                if (bulkInput && bulkInput.trim().length > 0) {
+                    const responseBlocks = bulkInput.split('||');
+                    responseBlocks.forEach(block => {
+                        const firstColonIndex = block.indexOf(':');
+                        if (firstColonIndex === -1) return;
+                        const triggerWord = block.substring(0, firstColonIndex).trim().toLowerCase();
+                        const replyString = block.substring(firstColonIndex + 1).trim();
+                        if (triggerWord && replyString) {
+                            autoResponses.push({ trigger: triggerWord, replyText: replyString });
+                        }
+                    });
+                }
+                await GuildConfig.findOneAndUpdate({ guildId }, { autoResponses }, { upsert: true });
+                return await interaction.editReply({ content: '✅ Custom auto-responses setup live!' });
             }
 
             if (interaction.customId.startsWith('modal_player_checkout_')) {
