@@ -211,22 +211,44 @@ client.on('interactionCreate', async (interaction) => {
 
             if (interaction.customId === 'btn_inv_guild_lb') {
                 await interaction.deferReply();
-                const allData = await InviteData.find({ guildId });
-                const sorted = allData.map(d => ({ userId: d.userId, total: d.permRegular - d.permLeaves - d.permFake, reg: d.permRegular, lvs: d.permLeaves }))
-                    .sort((a,b) => b.total - a.total).slice(0, 10);
+                const fetchedInvites = await interaction.guild.invites.fetch().catch(() => null);
+                
+                let inviteMap = new Map();
+                if (fetchedInvites) {
+                    fetchedInvites.forEach(inv => {
+                        if (inv.inviter) {
+                            const prev = inviteMap.get(inv.inviter.id) || 0;
+                            inviteMap.set(inv.inviter.id, prev + inv.uses);
+                        }
+                    });
+                }
+
+                const dbData = await InviteData.find({ guildId });
+                dbData.forEach(d => {
+                    const dbTotal = d.permRegular - d.permLeaves - d.permFake;
+                    const inviterUses = inviteMap.get(d.userId) || 0;
+                    inviteMap.set(d.userId, Math.max(dbTotal, inviterUses));
+                });
+
+                const sorted = Array.from(inviteMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+                if (sorted.length === 0) {
+                    return await interaction.followUp({ content: '❌ No active invite links found in this server.' });
+                }
 
                 let str = '```text\n';
                 const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️'];
                 for (let i = 0; i < sorted.length; i++) {
-                    const u = await interaction.client.users.fetch(sorted[i].userId).catch(() => null);
-                    str += `${medals[i]} ${i+1}. ${(u ? u.username : 'Unknown').padEnd(12, ' ')} • ${sorted[i].total} Total (${sorted[i].reg} Reg | ${sorted[i].lvs} Lvs)\n`;
+                    const u = await interaction.client.users.fetch(sorted[i][0]).catch(() => null);
+                    str += `${medals[i]} ${i+1}. ${(u ? u.username : 'Unknown').padEnd(12, ' ')} • ${sorted[i][1]} Invites\n`;
                 }
                 str += '```';
 
                 const embed = new EmbedBuilder().setTitle('🏆 GUILD LIFETIME LEADERBOARD').setDescription(str).setColor('#00FF00');
                 return await interaction.followUp({ embeds: [embed] });
             }
-
+            
+            
             if (interaction.customId === 'btn_inv_event_lb') {
                 await interaction.deferReply();
                 const allData = await InviteData.find({ guildId });
