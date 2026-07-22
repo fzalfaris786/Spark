@@ -5,7 +5,8 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('invite')
         .setDescription('Invite tracking and event management system')
-        .addSubcommand(s => s.setName('panel').setDescription('Open the invite control panel').setDefaultMemberPermissions(PermissionFlagsBits.Administrator))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand(s => s.setName('panel').setDescription('Open the invite control panel'))
         .addSubcommand(s => s.setName('check').setDescription('Check event invites for a member').addUserOption(o => o.setName('user').setDescription('Target user')))
         .addSubcommand(s => s.setName('lifetime').setDescription('Check lifetime invites for a member').addUserOption(o => o.setName('user').setDescription('Target user'))),
 
@@ -76,4 +77,3 @@ module.exports = {
         }
     }
 };
-      
