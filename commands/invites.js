@@ -14,6 +14,7 @@ module.exports = {
         const sub = interaction.options.getSubcommand();
         const guildId = interaction.guild.id;
 
+        // PANEL COMMAND
         if (sub === 'panel') {
             const embed = new EmbedBuilder()
                 .setTitle('📩 INVITE TRACKER DASHBOARD')
@@ -38,12 +39,14 @@ module.exports = {
             return await interaction.reply({ embeds: [embed], components: [row1, row2, row3] });
         }
 
+        // CHECK & LIFETIME COMMANDS (INSTANT RESPONSE WITH DEFER)
         if (sub === 'check' || sub === 'lifetime') {
-            await interaction.deferReply();
+            await interaction.deferReply(); // Isse 'Thinking...' safely handle ho jayega
+
             const target = interaction.options.getUser('user') || interaction.user;
             const data = await InviteData.findOne({ guildId, userId: target.id }) || { eventRegular: 0, eventLeaves: 0, eventFake: 0, permRegular: 0, permLeaves: 0, permFake: 0 };
             
-            const isLifetime = sub === 'lifetime';
+            const isLifetime = (sub === 'lifetime');
             const reg = isLifetime ? data.permRegular : data.eventRegular;
             const lvs = isLifetime ? data.permLeaves : data.eventLeaves;
             const fk = isLifetime ? data.permFake : data.eventFake;
@@ -68,3 +71,4 @@ module.exports = {
         }
     }
 };
+                
