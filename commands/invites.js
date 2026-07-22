@@ -1,0 +1,79 @@
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const InviteData = require('../models/InviteData');
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('invite')
+        .setDescription('Invite tracking and event management system')
+        .addSubcommand(s => s.setName('panel').setDescription('Open the invite control panel').setDefaultMemberPermissions(PermissionFlagsBits.Administrator))
+        .addSubcommand(s => s.setName('check').setDescription('Check event invites for a member').addUserOption(o => o.setName('user').setDescription('Target user')))
+        .addSubcommand(s => s.setName('lifetime').setDescription('Check lifetime invites for a member').addUserOption(o => o.setName('user').setDescription('Target user'))),
+
+    async execute(interaction) {
+        const sub = interaction.options.getSubcommand();
+        const guildId = interaction.guild.id;
+
+        if (sub === 'panel') {
+            const embed = new EmbedBuilder()
+                .setTitle('📩 INVITE TRACKER DASHBOARD')
+                .setDescription('Select an action below to manage active event trackers, trigger dynamic leaderboards, or configure log feeds.')
+                .setColor('#5865F2')
+                .setTimestamp();
+
+            const row1 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_inv_start').setLabel('Start Event Tracker').setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId('btn_inv_reset').setLabel('Reset Event Data').setStyle(ButtonStyle.Danger)
+            );
+
+            const row2 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_inv_guild_lb').setLabel('Guild Leaderboard').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('btn_inv_event_lb').setLabel('Invite Leaderboard').setStyle(ButtonStyle.Secondary)
+            );
+
+            const row3 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_inv_logs_cfg').setLabel('Setup Log Channel ID').setStyle(ButtonStyle.Secondary)
+            );
+
+            return await interaction.reply({ embeds: [embed], components: [row1, row2, row3] });
+        }
+
+        if (sub === 'check') {
+            const target = interaction.options.getUser('user') || interaction.user;
+            const data = await InviteData.findOne({ guildId, userId: target.id }) || { eventRegular: 0, eventLeaves: 0, eventFake: 0 };
+            const total = data.eventRegular - data.eventLeaves - data.eventFake;
+
+            const card = 
+```text
+👤 User      : ${target.tag}
+📊 Event     : ${total} Invites
+--------------------------------
+🟢 Regular   : ${data.eventRegular}
+🔴 Leaves    : ${data.eventLeaves}
+⚠️ Fake      : ${data.eventFake}
+```;
+
+            const embed = new EmbedBuilder().setTitle('⚡ EVENT INVITE PROFILE').setDescription(card).setColor('#FFCC00');
+            return await interaction.reply({ embeds: [embed] });
+        }
+
+        if (sub === 'lifetime') {
+            const target = interaction.options.getUser('user') || interaction.user;
+            const data = await InviteData.findOne({ guildId, userId: target.id }) || { permRegular: 0, permLeaves: 0, permFake: 0 };
+            const total = data.permRegular - data.permLeaves - data.permFake;
+
+            const card = 
+```text
+👤 User      : ${target.tag}
+📊 Lifetime  : ${total} Invites
+--------------------------------
+🟢 Regular   : ${data.permRegular}
+🔴 Leaves    : ${data.permLeaves}
+⚠️ Fake      : ${data.permFake}
+```;
+
+            const embed = new EmbedBuilder().setTitle('🏆 LIFETIME INVITE PROFILE').setDescription(card).setColor('#00FF00');
+            return await interaction.reply({ embeds: [embed] });
+        }
+    }
+};
+      
