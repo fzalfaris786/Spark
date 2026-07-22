@@ -38,42 +38,33 @@ module.exports = {
             return await interaction.reply({ embeds: [embed], components: [row1, row2, row3] });
         }
 
-        if (sub === 'check') {
+        if (sub === 'check' || sub === 'lifetime') {
+            await interaction.deferReply();
             const target = interaction.options.getUser('user') || interaction.user;
-            const data = await InviteData.findOne({ guildId, userId: target.id }) || { eventRegular: 0, eventLeaves: 0, eventFake: 0 };
-            const total = data.eventRegular - data.eventLeaves - data.eventFake;
+            const data = await InviteData.findOne({ guildId, userId: target.id }) || { eventRegular: 0, eventLeaves: 0, eventFake: 0, permRegular: 0, permLeaves: 0, permFake: 0 };
+            
+            const isLifetime = sub === 'lifetime';
+            const reg = isLifetime ? data.permRegular : data.eventRegular;
+            const lvs = isLifetime ? data.permLeaves : data.eventLeaves;
+            const fk = isLifetime ? data.permFake : data.eventFake;
+            const total = reg - lvs - fk;
 
             const card = 
 ```text
 👤 User      : ${target.tag}
-📊 Event     : ${total} Invites
+📊 ${isLifetime ? 'Lifetime' : 'Event'}   : ${total} Invites
 --------------------------------
-🟢 Regular   : ${data.eventRegular}
-🔴 Leaves    : ${data.eventLeaves}
-⚠️ Fake      : ${data.eventFake}
+🟢 Regular   : ${reg}
+🔴 Leaves    : ${lvs}
+⚠️ Fake      : ${fk}
 ```;
 
-            const embed = new EmbedBuilder().setTitle('⚡ EVENT INVITE PROFILE').setDescription(card).setColor('#FFCC00');
-            return await interaction.reply({ embeds: [embed] });
-        }
+            const embed = new EmbedBuilder()
+                .setTitle(isLifetime ? '🏆 LIFETIME INVITE PROFILE' : '⚡ EVENT INVITE PROFILE')
+                .setDescription(card)
+                .setColor(isLifetime ? '#00FF00' : '#FFCC00');
 
-        if (sub === 'lifetime') {
-            const target = interaction.options.getUser('user') || interaction.user;
-            const data = await InviteData.findOne({ guildId, userId: target.id }) || { permRegular: 0, permLeaves: 0, permFake: 0 };
-            const total = data.permRegular - data.permLeaves - data.permFake;
-
-            const card = 
-```text
-👤 User      : ${target.tag}
-📊 Lifetime  : ${total} Invites
---------------------------------
-🟢 Regular   : ${data.permRegular}
-🔴 Leaves    : ${data.permLeaves}
-⚠️ Fake      : ${data.permFake}
-```;
-
-            const embed = new EmbedBuilder().setTitle('🏆 LIFETIME INVITE PROFILE').setDescription(card).setColor('#00FF00');
-            return await interaction.reply({ embeds: [embed] });
+            return await interaction.editReply({ embeds: [embed] });
         }
     }
 };
