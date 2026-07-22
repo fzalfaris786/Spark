@@ -6,15 +6,19 @@ const path = require('path');
 const Parser = require('rss-parser');
 const GuildConfig = require('./models/GuildConfig');
 const { GuildStore, OrderTicket } = require('./models/GuildStore');
+const InviteData = require('./models/InviteData');
 
 const parser = new Parser();
+const guildInvites = new Map(); // Global invite cache memory
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildInvites
     ]
 });
 
@@ -32,6 +36,17 @@ client.once('ready', async () => {
     if (process.env.MONGO_URI) {
         try { await mongoose.connect(process.env.MONGO_URI); } catch (err) { console.error("Mongo Error:", err); }
     }
+
+    // Cache active guild invites on boot
+    client.guilds.cache.forEach(async (guild) => {
+        try {
+            const invites = await guild.invites.fetch();
+            const codeUses = new Map();
+            invites.forEach(inv => codeUses.set(inv.code, inv.uses));
+            guildInvites.set(guild.id, codeUses);
+        } catch (e) {}
+    });
+
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error("Slash Reg Error:", e); }
 });
@@ -71,12 +86,11 @@ client.on('messageCreate', async (message) => {
     } catch (err) { console.error("Auto response exception:", err); }
 });
 
-// ================= WELCOME & INSTANT STATS ON JOIN =================
+// ================= WELCOME & INVITE TRACKER JOIN =================
 client.on('guildMemberAdd', async (member) => {
     try {
         const config = await GuildConfig.findOne({ guildId: member.guild.id });
-        if (!config) return;
-        if (config.welcomeChannel) {
+        if (config && config.welcomeChannel) {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
                 let descText = config.welcomeMessage || 'Welcome!';
@@ -105,9 +119,56 @@ client.on('guildMemberAdd', async (member) => {
                 await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => null);
             }
         }
-        if (config.totalMembersChan) {
+        if (config && config.totalMembersChan) {
             const chan = member.guild.channels.cache.get(config.totalMembersChan);
             if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
+        }
+
+        // --- INVITE TRACKING LOGIC ---
+        const cachedInvites = guildInvites.get(member.guild.id) || new Map();
+        const newInvites = await member.guild.invites.fetch().catch(() => null);
+        
+        let inviter = null;
+        if (newInvites) {
+            const usedInvite = newInvites.find(inv => cachedInvites.get(inv.code) < inv.uses);
+            if (usedInvite && usedInvite.inviter) inviter = usedInvite.inviter;
+
+            const codeUses = new Map();
+            newInvites.forEach(inv => codeUses.set(inv.code, inv.uses));
+            guildInvites.set(member.guild.id, codeUses);
+        }
+
+        if (inviter) {
+            const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
+            const isFake = accountAgeDays < 7;
+
+            const invData = await InviteData.findOne({ guildId: member.guild.id, userId: inviter.id }) || new InviteData({ guildId: member.guild.id, userId: inviter.id });
+
+            if (isFake) invData.permFake += 1;
+            else invData.permRegular += 1;
+
+            if (invData.isEventActive) {
+                if (isFake) invData.eventFake += 1;
+                else invData.eventRegular += 1;
+            }
+
+            await invData.save();
+
+            if (config && config.inviteLogChannel) {
+                const logChan = member.guild.channels.cache.get(config.inviteLogChannel);
+                if (logChan) {
+                    const lifetimeTotal = invData.permRegular - invData.permLeaves - invData.permFake;
+                    const logCard = 
+```text
+👤 Member     : ${member.user.tag}
+🔗 Invited By : ${inviter.tag}
+--------------------------------
+📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)
+```;
+                    const embed = new EmbedBuilder().setTitle('📥 MEMBER JOIN LOG').setDescription(logCard).setColor('#00FF00').setTimestamp();
+                    await logChan.send({ embeds: [embed] }).catch(() => null);
+                }
+            }
         }
     } catch (err) { console.error(err); }
 });
@@ -122,7 +183,7 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (COMPLETE ROUTER) =================
+// ================= DYNAMIC INTERACTIONS (ROUTER) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
@@ -137,6 +198,60 @@ client.on('interactionCreate', async (interaction) => {
 
         // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
+            // --- INVITE TRACKER DASHBOARD BUTTONS ---
+            if (interaction.customId === 'btn_inv_start') {
+                await InviteData.updateMany({ guildId }, { isEventActive: true, eventRegular: 0, eventLeaves: 0, eventFake: 0 });
+                return await interaction.reply({ content: '🚀 **Event Tracker Started!** Counting new joins from now.', ephemeral: true });
+            }
+
+            if (interaction.customId === 'btn_inv_reset') {
+                await InviteData.updateMany({ guildId }, { eventRegular: 0, eventLeaves: 0, eventFake: 0 });
+                return await interaction.reply({ content: '🔄 **Event Data Reset to 0!**', ephemeral: true });
+            }
+
+            if (interaction.customId === 'btn_inv_guild_lb') {
+                await interaction.deferReply();
+                const allData = await InviteData.find({ guildId });
+                const sorted = allData.map(d => ({ userId: d.userId, total: d.permRegular - d.permLeaves - d.permFake, reg: d.permRegular, lvs: d.permLeaves }))
+                    .sort((a,b) => b.total - a.total).slice(0, 10);
+
+                let str = '```text\n';
+                const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️'];
+                for (let i = 0; i < sorted.length; i++) {
+                    const u = await interaction.client.users.fetch(sorted[i].userId).catch(() => null);
+                    str += `${medals[i]} ${i+1}. ${(u ? u.username : 'Unknown').padEnd(12, ' ')} • ${sorted[i].total} Total (${sorted[i].reg} Reg | ${sorted[i].lvs} Lvs)\n`;
+                }
+                str += '```';
+
+                const embed = new EmbedBuilder().setTitle('🏆 GUILD LIFETIME LEADERBOARD').setDescription(str).setColor('#00FF00');
+                return await interaction.followUp({ embeds: [embed] });
+            }
+
+            if (interaction.customId === 'btn_inv_event_lb') {
+                await interaction.deferReply();
+                const allData = await InviteData.find({ guildId });
+                const sorted = allData.map(d => ({ userId: d.userId, total: d.eventRegular - d.eventLeaves - d.eventFake, reg: d.eventRegular, lvs: d.eventLeaves }))
+                    .sort((a,b) => b.total - a.total).slice(0, 10);
+
+                let str = '```text\n';
+                const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️'];
+                for (let i = 0; i < sorted.length; i++) {
+                    const u = await interaction.client.users.fetch(sorted[i].userId).catch(() => null);
+                    str += `${medals[i]} ${i+1}. ${(u ? u.username : 'Unknown').padEnd(12, ' ')} • ${sorted[i].total} Total (${sorted[i].reg} Reg | ${sorted[i].lvs} Lvs)\n`;
+                }
+                str += '```';
+
+                const embed = new EmbedBuilder().setTitle('⚡ ACTIVE EVENT LEADERBOARD').setDescription(str).setColor('#FFCC00');
+                return await interaction.followUp({ embeds: [embed] });
+            }
+
+            if (interaction.customId === 'btn_inv_logs_cfg') {
+                const modal = new ModalBuilder().setCustomId('modal_inv_logs').setTitle('Setup Invite Log Channel');
+                modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('inv_log_input').setLabel('Invite Logs Channel ID').setRequired(true).setStyle(TextInputStyle.Short)));
+                return await interaction.showModal(modal);
+            }
+
+            // --- STORE DASHBOARD BUTTONS ---
             if (interaction.customId === 'setup_store_cfg') {
                 const modal = new ModalBuilder().setCustomId('modal_store_cfg').setTitle('1. Basic Setup & Stock');
                 modal.addComponents(
@@ -308,11 +423,16 @@ client.on('interactionCreate', async (interaction) => {
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
             }
-        }
-            
-                    // 3. MODAL SUBMISSIONS HANDLER
+                                                         }
+                // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
+
+            if (interaction.customId === 'modal_inv_logs') {
+                const channelId = interaction.fields.getTextInputValue('inv_log_input').trim();
+                await GuildConfig.findOneAndUpdate({ guildId }, { inviteLogChannel: channelId }, { upsert: true });
+                return await interaction.editReply({ content: `✅ **Saved!** Invite logs channel updated to <#${channelId}>.` });
+            }
 
             if (interaction.customId === 'modal_ticket') {
                 const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
@@ -522,7 +642,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. SELECT MENUS HANDLER (SUPPORT TICKETS + STORE)
+        // 4. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
