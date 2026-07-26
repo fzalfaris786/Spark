@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const Parser = require('rss-parser');
 
-// Models
+// All Models
 const GuildConfig = require('./models/GuildConfig');
 const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
@@ -111,7 +111,7 @@ client.on('messageCreate', async (message) => {
 
             const embed = new EmbedBuilder()
                 .setTitle('🎛️ Spark Master Setup & Panel Dashboard')
-                .setDescription('Pehle upar dropdown se **Select a Server** karo, phir us server ke saare setup panels open ho jayenge!')
+                .setDescription('Select a server from the dropdown below to view all configuration panels directly in your DM.')
                 .setColor('#5865F2');
 
             return message.reply({ embeds: [embed], components: [serverSelectRow] });
@@ -219,17 +219,16 @@ client.on('guildMemberAdd', async (member) => {
 
             await invData.save();
 
-            // Also update simple Invite model for backup tracking
-            let simpleInv = await Invite.findOne({ guildId: member.guild.id, userId: inviter.id });
-            if (!simpleInv) simpleInv = new Invite({ guildId: member.guild.id, userId: inviter.id, invites: 0 });
-            simpleInv.invites += 1;
-            await simpleInv.save();
+            let invModelData = await Invite.findOne({ guildId: member.guild.id, userId: inviter.id });
+            if (!invModelData) invModelData = new Invite({ guildId: member.guild.id, userId: inviter.id, invites: 0 });
+            invModelData.invites += 1;
+            await invModelData.save();
 
             const sConfig = await ServerConfig.findOne({ guildId: member.guild.id });
-            const logChannelId = config?.inviteLogChannel || sConfig?.inviteLogChannelId;
+            const logChanId = config?.inviteLogChannel || sConfig?.inviteLogChannelId;
 
-            if (logChannelId) {
-                const logChan = member.guild.channels.cache.get(logChannelId);
+            if (logChanId) {
+                const logChan = member.guild.channels.cache.get(logChanId);
                 if (logChan) {
                     const lifetimeTotal = invData.permRegular - invData.permLeaves - invData.permFake;
                     const logCard = `👤 Member     : ${member.user.tag}\n🔗 Invited By : ${inviter.tag}\n--------------------------------\n📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)`;
@@ -251,22 +250,20 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS & MASTER PANELS (FIXED TIMEOUT) =================
+// ================= DYNAMIC INTERACTIONS (ROUTER & MASTER PANELS) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
 
-        // OWNER DM PANELS HANDLER (Using deferUpdate/editReply to prevent "This interaction failed")
+        // OWNER DM PANELS HANDLER
         if (!interaction.guild && interaction.user.id === OWNER_ID) {
             if (interaction.isStringSelectMenu()) {
-                await interaction.deferUpdate().catch(() => {});
-
                 const selectedGuildId = interaction.values[0];
                 const guild = client.guilds.cache.get(selectedGuildId);
-                if (!guild) return interaction.followUp({ content: '❌ Guild not found.', ephemeral: true });
+                if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
 
                 if (interaction.customId === 'dm_select_server_bot') {
-                    return interaction.editReply({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
+                    return interaction.update({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
                         new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`confirm_leave_${selectedGuildId}`).setLabel(`Leave ${guild.name}`).setStyle(ButtonStyle.Danger)
                         )
@@ -312,7 +309,7 @@ client.on('interactionCreate', async (interaction) => {
                         new ButtonBuilder().setCustomId(`dm_btn_inv_logs_cfg_${selectedGuildId}`).setLabel('Setup Log Channel').setStyle(ButtonStyle.Secondary)
                     );
 
-                    return interaction.editReply({ 
+                    return interaction.update({ 
                         content: `📦 **All Setup Panels Loaded for ${guild.name}:**`, 
                         embeds: [embedMain], 
                         components: [row1, row2, row3, rowStore1, rowStore2, rowInvite1, rowInvite2] 
@@ -321,27 +318,28 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.isButton() && interaction.customId.startsWith('confirm_leave_')) {
-                await interaction.deferUpdate().catch(() => {});
                 const guildId = interaction.customId.split('_')[2];
                 const guild = client.guilds.cache.get(guildId);
                 if (guild) {
                     const name = guild.name;
                     await guild.leave();
-                    return interaction.editReply({ content: `✅ Successfully left server: **${name}**`, components: [] });
+                    return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
                 }
-                return interaction.editReply({ content: `❌ Server not found.`, components: [] });
+                return interaction.update({ content: `❌ Server not found.`, components: [] });
             }
             return;
         }
 
         if (!guildId) return;
 
+        // 1. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
+        // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_inv_start') {
                 await InviteData.updateMany({ guildId }, { isEventActive: true, eventRegular: 0, eventLeaves: 0, eventFake: 0 });
@@ -398,6 +396,7 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
+            // --- UPGRADED TICKET CLAIM HANDLER (LOCKED & RENAME) ---
             const config = await GuildConfig.findOne({ guildId });
             if (interaction.customId === 'claim_ticket') {
                 if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
@@ -437,9 +436,9 @@ client.on('interactionCreate', async (interaction) => {
                     if (c) await c.send({ content: `🗑️ Closed by ${interaction.user.tag}`, files: [attachment] }).catch(() => null);
                 }
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-            }
+                        }
 
-            if (interaction.customId.startsWith('btn_trigger_checkout_')) {
+                    if (interaction.customId.startsWith('btn_trigger_checkout_')) {
                 const itemObjectId = interaction.customId.replace('btn_trigger_checkout_', '');
                 const playerModal = new ModalBuilder().setCustomId(`modal_player_checkout_${itemObjectId}`).setTitle('Player Verification');
                 playerModal.addComponents(
@@ -489,6 +488,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
 
@@ -697,6 +697,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // 4. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
@@ -763,6 +764,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// ================= TIMED LOOP =================
 setInterval(async () => {
     try {
         const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
