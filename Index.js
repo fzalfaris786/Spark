@@ -67,9 +67,9 @@ client.once('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // 1. Owner DM Panel Handler (!panel)
+    // 1. Owner DM Panel Handler (!panel) in DMs
     if (!message.guild) {
-        if (message.author.id === OWNER_ID && message.content.toLowerCase() === '!panel') {
+        if (message.author.id === OWNER_ID && message.content.toLowerCase().trim() === '!panel') {
             const guilds = [...client.guilds.cache.values()];
             if (guilds.length === 0) return message.reply("❌ Bot is not in any servers.");
 
@@ -90,7 +90,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // 2. Server Auto Responses Handler
+    // 2. Server Auto Responses Handler (Only for Servers)
     const userMessage = message.content.toLowerCase();
 
     try {
