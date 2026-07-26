@@ -20,14 +20,13 @@ const GuildConfigSchema = new mongoose.Schema({
     ticketImage: { type: String, default: '' },   
 
     totalMembersChan: { type: String, default: null },
-    onlinePlayersChan: { type: String, default: null },
+    inviteLogChannel: { type: String, default: null },
 
     ytChannelId: { type: String, default: null },
     ytLiveChannel: { type: String, default: null },
     ytUploadChannel: { type: String, default: null },
     ytLastVideoId: { type: String, default: null },
 
-    // Dynamic Database matrix configuration for Auto Responses
     autoResponses: [
         {
             trigger: { type: String, lowercase: true, trim: true },
