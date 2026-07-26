@@ -17,32 +17,21 @@ module.exports = {
         const sub = interaction.options.getSubcommand();
         const guildId = interaction.guild.id;
 
-        // 1. PANEL COMMAND
         if (sub === 'panel') {
             const embed = new EmbedBuilder()
                 .setTitle('📩 INVITE TRACKER DASHBOARD')
-                .setDescription('Select an action below to manage event trackers, view leaderboards, or configure log channels.')
+                .setDescription('Manage your server invite logs and view the top 10 lifetime leaderboard below.')
                 .setColor('#5865F2')
                 .setTimestamp();
 
             const row1 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('btn_inv_start').setLabel('Start Event Tracker').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('btn_inv_reset').setLabel('Reset Event Data').setStyle(ButtonStyle.Danger)
-            );
-
-            const row2 = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_inv_guild_lb').setLabel('Top 10 Leaderboard').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId('btn_inv_event_lb').setLabel('Event Leaderboard').setStyle(ButtonStyle.Secondary)
-            );
-
-            const row3 = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_inv_logs_cfg').setLabel('Setup Log Channel ID').setStyle(ButtonStyle.Secondary)
             );
 
-            return await interaction.reply({ embeds: [embed], components: [row1, row2, row3], ephemeral: true });
+            return await interaction.reply({ embeds: [embed], components: [row1], ephemeral: true });
         }
 
-        // 2. CHECK COMMAND (Single Player Invites)
         if (sub === 'check') {
             await interaction.deferReply();
 
