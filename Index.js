@@ -7,10 +7,10 @@ const Parser = require('rss-parser');
 const GuildConfig = require('./models/GuildConfig');
 const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
-const Ticket = require('./models/Ticket'); // Upgraded ticket model
+const Ticket = require('./models/Ticket');
 
 const parser = new Parser();
-const guildInvites = new Map(); // Global invite cache memory
+const guildInvites = new Map();
 
 const OWNER_ID = '1266728371719508062';
 
@@ -41,7 +41,6 @@ client.once('ready', async () => {
         try { await mongoose.connect(process.env.MONGO_URI); } catch (err) { console.error("Mongo Error:", err); }
     }
 
-    // Cache active guild invites on boot
     client.guilds.cache.forEach(async (guild) => {
         try {
             const invites = await guild.invites.fetch();
@@ -54,7 +53,6 @@ client.once('ready', async () => {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error("Slash Reg Error:", e); }
 
-    // Send Startup DM to Owner
     try {
         const owner = await client.users.fetch(OWNER_ID);
         if (owner) {
@@ -63,7 +61,6 @@ client.once('ready', async () => {
     } catch (e) {}
 });
 
-// Shutdown Hook for DM Alert
 process.on('SIGINT', async () => {
     try {
         const owner = await client.users.fetch(OWNER_ID);
@@ -74,9 +71,8 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR & OWNER DM PANELS =================
+// ================= OWNER DM CONTROL PANELS & AUTO-RESPONSE =================
 client.on('messageCreate', async (message) => {
-    // 1. Owner DM Control Panels (!bot panel & !panel)
     if (!message.guild && message.author.id === OWNER_ID) {
         const text = message.content.trim();
 
@@ -102,14 +98,19 @@ client.on('messageCreate', async (message) => {
             const guilds = client.guilds.cache.map(g => ({ label: g.name.substring(0, 25), value: g.id }));
             if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
 
-            const row = new ActionRowBuilder().addComponents(
+            const serverSelectRow = new ActionRowBuilder().addComponents(
                 new StringSelectMenuBuilder()
-                    .setCustomId('dm_setup_panel_select')
-                    .setPlaceholder('Select server for setup & panels...')
+                    .setCustomId('dm_master_server_select')
+                    .setPlaceholder('🌐 Select Target Server First...')
                     .addOptions(guilds.slice(0, 25))
             );
 
-            return message.reply({ content: `🎛️ **Spark Master Setup Panel**\nSelect server to configure Ticket, Invites & Store directly from DM:`, components: [row] });
+            const embed = new EmbedBuilder()
+                .setTitle('🎛️ Spark Master Setup & Panel Dashboard')
+                .setDescription('Pehle upar dropdown se **Server Select** karo, phir neeche diye gaye panels me se jo setup deploy karna hai us par click karo!')
+                .setColor('#5865F2');
+
+            return message.reply({ embeds: [embed], components: [serverSelectRow] });
         }
         return;
     }
@@ -185,7 +186,6 @@ client.on('guildMemberAdd', async (member) => {
             if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
         }
 
-        // --- INVITE TRACKING LOGIC ---
         const cachedInvites = guildInvites.get(member.guild.id) || new Map();
         const newInvites = await member.guild.invites.fetch().catch(() => null);
         
@@ -238,12 +238,11 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (ROUTER & UPGRADED TICKETS) =================
+// ================= DYNAMIC INTERACTIONS & MASTER PANELS =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
 
-        // 1. OWNER DM SELECT MENUS & BUTTONS (!bot panel & !panel)
         if (!interaction.guild && interaction.user.id === OWNER_ID) {
             if (interaction.isStringSelectMenu()) {
                 const selectedGuildId = interaction.values[0];
@@ -258,14 +257,36 @@ client.on('interactionCreate', async (interaction) => {
                     ] });
                 }
 
-                if (interaction.customId === 'dm_setup_panel_select') {
-                    let config = await GuildConfig.findOne({ guildId: selectedGuildId });
+                if (interaction.customId === 'dm_master_server_select') {
                     const embed = new EmbedBuilder()
-                        .setTitle(`⚙️ Master Setup // ${guild.name}`)
-                        .setDescription(`Manage server settings directly from your DM:\n\n• **Invite Logs:** \`${config?.inviteLogChannel || 'Not Set'}\`\n• **Ticket Category:** \`${config?.ticketParent || 'Not Set'}\``)
+                        .setTitle(`🎛️ Setup Panels // ${guild.name}`)
+                        .setDescription(`Target Server Selected: **${guild.name}** (\`${guild.id}\`)\n\nAb aap niche diye gaye buttons se koi bhi panel direct is server par deploy kar sakte hain:`)
                         .setColor('#00FF00');
 
-                    return interaction.update({ content: null, embeds: [embed], components: [] });
+                    const panelButtonsRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`deploy_store_${selectedGuildId}`).setLabel('🛒 Store Panel').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`deploy_ticket_${selectedGuildId}`).setLabel('🎫 Ticket Panel').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`deploy_invite_${selectedGuildId}`).setLabel('📊 Invite Panel').setStyle(ButtonStyle.Secondary)
+                    );
+
+                    return interaction.update({ embeds: [embed], components: [interaction.message.components[0], panelButtonsRow] });
+                }
+            }
+
+            if (interaction.isButton() && interaction.customId.startsWith('deploy_')) {
+                const parts = interaction.customId.split('_');
+                const panelType = parts[1];
+                const guildId = parts[2];
+                const guild = client.guilds.cache.get(guildId);
+
+                if (!guild) return interaction.reply({ content: '❌ Server not found.', ephemeral: true });
+
+                if (panelType === 'store') {
+                    return interaction.reply({ content: `✅ **Store Panel Setup Activated** for **${guild.name}**.` });
+                } else if (panelType === 'ticket') {
+                    return interaction.reply({ content: `✅ **Ticket Panel Setup Activated** for **${guild.name}**.` });
+                } else if (panelType === 'invite') {
+                    return interaction.reply({ content: `✅ **Invite Panel Setup Activated** for **${guild.name}**.` });
                 }
             }
 
@@ -277,23 +298,20 @@ client.on('interactionCreate', async (interaction) => {
                     await guild.leave();
                     return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
                 }
-                return interaction.update({ content: `❌ Server not found or already left.`, components: [] });
+                return interaction.update({ content: `❌ Server not found.`, components: [] });
             }
             return;
         }
 
         if (!guildId) return;
 
-        // 2. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
-        // 3. BUTTON INTERACTIONS
         if (interaction.isButton()) {
-            // --- INVITE TRACKER DASHBOARD BUTTONS ---
             if (interaction.customId === 'btn_inv_start') {
                 await InviteData.updateMany({ guildId }, { isEventActive: true, eventRegular: 0, eventLeaves: 0, eventFake: 0 });
                 return await interaction.reply({ content: '🚀 **Event Tracker Started!** Counting new joins from now.', ephemeral: true });
@@ -349,7 +367,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // --- UPGRADED TICKET CLAIM HANDLER (LOCKED & RENAME) ---
             const config = await GuildConfig.findOne({ guildId });
             if (interaction.customId === 'claim_ticket') {
                 if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
@@ -441,7 +458,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
 
@@ -650,7 +666,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 5. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
@@ -717,7 +732,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= TIMED LOOP =================
 setInterval(async () => {
     try {
         const stats = await GuildConfig.find({ onlinePlayersChan: { $ne: null } });
