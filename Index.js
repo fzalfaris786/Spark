@@ -252,7 +252,7 @@ client.on('interactionCreate', async (interaction) => {
         if (!interaction.guild && interaction.user.id === OWNER_ID) {
             if (interaction.isStringSelectMenu()) {
                 const selectedGuildId = interaction.values[0];
-                userSelectedGuilds.set(interaction.user.id, selectedGuildId); // Save session state safely
+                userSelectedGuilds.set(interaction.user.id, selectedGuildId);
                 
                 await interaction.update({ content: '⏳ Loading panel...', components: [] }).catch(() => {});
 
@@ -335,7 +335,6 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.reply({ embeds: [embed], components: [row] }).catch(() => {});
                 }
 
-                // Direct Modal Trigger from DM Dashboard Buttons
                 if (interaction.customId === 'dm_btn_tix') {
                     const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Setup Support Tickets');
                     modal.addComponents(
@@ -451,12 +450,12 @@ client.on('interactionCreate', async (interaction) => {
             }
             return;
         }
-      
-              if (!guildId) return;
+        
+                if (!guildId) return;
 
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
-            if (command) await command.execute(commandFiles ? interaction : null);
+            if (command) await command.execute(interaction);
             return;
         }
 
