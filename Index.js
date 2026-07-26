@@ -13,7 +13,7 @@ const Invite = require('./models/Invite');
 
 const parser = new Parser();
 const guildInvites = new Map();
-const userSelectedGuilds = new Map(); // Global session memory for DM panel selection
+const userSelectedGuilds = new Map();
 
 const OWNER_ID = '1266728371719508062';
 
@@ -59,7 +59,7 @@ client.once('ready', async () => {
     try {
         const owner = await client.users.fetch(OWNER_ID);
         if (owner) {
-            await owner.send(`🟢 **Spark Bot is Online & Ready!**\nLogged in as: \`${client.user.tag}\`\nActive Servers: \`${client.guilds.cache.size}\``).catch(() => null);
+            await owner.send(`🟢 **Spark Bot is Online & Ready!**\nLogged in as: \`${client.user.tag}\``).catch(() => null);
         }
     } catch (e) {}
 });
@@ -67,9 +67,7 @@ client.once('ready', async () => {
 process.on('SIGINT', async () => {
     try {
         const owner = await client.users.fetch(OWNER_ID);
-        if (owner) {
-            await owner.send(`🔴 **Spark Bot is Shutting Down / Offline!**`).catch(() => null);
-        }
+        if (owner) { await owner.send(`🔴 **Spark Bot is Offline!**`).catch(() => null); }
     } catch (e) {}
     process.exit(0);
 });
@@ -84,17 +82,12 @@ client.on('messageCreate', async (message) => {
             if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
 
             const row = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('dm_select_server_bot')
-                    .setPlaceholder('Select a server to manage...')
-                    .addOptions(guilds.slice(0, 25))
+                new StringSelectMenuBuilder().setCustomId('dm_select_server_bot').setPlaceholder('Select a server to manage...').addOptions(guilds.slice(0, 25))
             );
-
             const leaveRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('dm_leave_server_btn').setLabel('Leave Selected Server').setStyle(ButtonStyle.Danger)
             );
-
-            return message.reply({ content: `🤖 **Spark Bot Management Panel**\nSelect a server below:`, components: [row, leaveRow] });
+            return message.reply({ content: `🤖 **Spark Bot Management Panel**`, components: [row, leaveRow] });
         }
 
         if (text === '!panel') {
@@ -102,15 +95,12 @@ client.on('messageCreate', async (message) => {
             if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
 
             const serverSelectRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('dm_master_server_select')
-                    .setPlaceholder('🌐 Select Target Server First...')
-                    .addOptions(guilds.slice(0, 25))
+                new StringSelectMenuBuilder().setCustomId('dm_master_server_select').setPlaceholder('🌐 Select Target Server First...').addOptions(guilds.slice(0, 25))
             );
 
             const embed = new EmbedBuilder()
                 .setTitle('🎛️ Spark Master Setup & Panel Dashboard')
-                .setDescription('Select a server from the dropdown below to choose which panel you want to open.')
+                .setDescription('Select a server from the dropdown below to open setup panels.')
                 .setColor('#5865F2');
 
             return message.reply({ embeds: [embed], components: [serverSelectRow] });
@@ -125,30 +115,14 @@ client.on('messageCreate', async (message) => {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
 
-        const matched = config.autoResponses.find(r => {
-            const regex = new RegExp(`\\b${r.trigger}\\b`, 'i');
-            return regex.test(userMessage);
-        });
-        
+        const matched = config.autoResponses.find(r => new RegExp(`\\b${r.trigger}\\b`, 'i').test(userMessage));
         if (matched && matched.replyText) {
             let replyText = matched.replyText.replace(/\\n/g, '\n');
             const responseEmbed = new EmbedBuilder().setColor("Blue").setTimestamp();
-
-            const urlRegex = /(https?:\/\/[^\s]+)/g;
-            const foundUrls = replyText.match(urlRegex);
-
-            if (foundUrls && foundUrls.length > 0) {
-                const imageUrl = foundUrls.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i) || url.includes('cdn.discordapp.com') || url.includes('media.discordapp.net'));
-                if (imageUrl) {
-                    responseEmbed.setImage(imageUrl);
-                    replyText = replyText.replace(imageUrl, '').trim();
-                }
-            }
-
             if (replyText.length > 0) responseEmbed.setDescription(replyText);
             return message.reply({ embeds: [responseEmbed] });
         }
-    } catch (err) { console.error("Auto response exception:", err); }
+    } catch (err) { console.error(err); }
 });
 
 // ================= WELCOME & INVITE TRACKER JOIN =================
@@ -158,93 +132,15 @@ client.on('guildMemberAdd', async (member) => {
         if (config && config.welcomeChannel) {
             const channel = member.guild.channels.cache.get(config.welcomeChannel);
             if (channel) {
-                let descText = config.welcomeMessage || 'Welcome!';
-                descText = descText
-                    .replace(/{user}/g, `${member}`)
-                    .replace(/{{User.Mention}}/g, `${member}`)
-                    .replace(/{{user.mention}}/g, `${member}`)
-                    .replace(/{memberCount}/g, `${member.guild.memberCount}`);
-                
-                const createdAtFormatted = member.user.createdAt.toLocaleDateString('en-GB', {
-                    day: 'numeric', month: 'long', year: 'numeric'
-                });
-                descText = descText.replace(/{accountCreated}/g, createdAtFormatted);
-                
-                const embed = new EmbedBuilder()
-                    .setTitle(config.welcomeTitle || '✨ WELCOME ✨')
-                    .setDescription(descText)
-                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setColor('#FFCC00')
-                    .setFooter({ text: `Member #${member.guild.memberCount}` })
-                    .setTimestamp();
-                
-                if (config.welcomeThumbnail && config.welcomeThumbnail.startsWith('http')) {
-                    embed.setImage(config.welcomeThumbnail);
-                }
+                let descText = (config.welcomeMessage || 'Welcome!').replace(/{user}/g, `${member}`).replace(/{memberCount}/g, `${member.guild.memberCount}`);
+                const embed = new EmbedBuilder().setTitle(config.welcomeTitle || '✨ WELCOME ✨').setDescription(descText).setColor('#FFCC00').setTimestamp();
                 await channel.send({ content: `${member}`, embeds: [embed] }).catch(() => null);
             }
         }
-        if (config && config.totalMembersChan) {
-            const chan = member.guild.channels.cache.get(config.totalMembersChan);
-            if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
-        }
-
-        const cachedInvites = guildInvites.get(member.guild.id) || new Map();
-        const newInvites = await member.guild.invites.fetch().catch(() => null);
-        
-        let inviter = null;
-        if (newInvites) {
-            const usedInvite = newInvites.find(inv => cachedInvites.get(inv.code) < inv.uses);
-            if (usedInvite && usedInvite.inviter) inviter = usedInvite.inviter;
-
-            const codeUses = new Map();
-            newInvites.forEach(inv => codeUses.set(inv.code, inv.uses));
-            guildInvites.set(member.guild.id, codeUses);
-        }
-
-        if (inviter) {
-            const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
-            const isFake = accountAgeDays < 7;
-
-            const invData = await InviteData.findOne({ guildId: member.guild.id, userId: inviter.id }) || new InviteData({ guildId: member.guild.id, userId: inviter.id });
-
-            if (isFake) invData.permFake += 1;
-            else invData.permRegular += 1;
-
-            if (invData.isEventActive) {
-                if (isFake) invData.eventFake += 1;
-                else invData.eventRegular += 1;
-            }
-
-            await invData.save();
-
-            const sConfig = await ServerConfig.findOne({ guildId: member.guild.id });
-            const logChannelId = config?.inviteLogChannel || sConfig?.inviteLogChannelId;
-
-            if (logChannelId) {
-                const logChan = member.guild.channels.cache.get(logChannelId);
-                if (logChan) {
-                    const lifetimeTotal = invData.permRegular - invData.permLeaves - invData.permFake;
-                    const logCard = `👤 Member     : ${member.user.tag}\n🔗 Invited By : ${inviter.tag}\n--------------------------------\n📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)`;
-                    const embed = new EmbedBuilder().setTitle('📥 MEMBER JOIN LOG').setDescription(logCard).setColor('#00FF00').setTimestamp();
-                    await logChan.send({ embeds: [embed] }).catch(() => null);
-                }
-            }
-        }
     } catch (err) { console.error(err); }
 });
 
-client.on('guildMemberRemove', async (member) => {
-    try {
-        const config = await GuildConfig.findOne({ guildId: member.guild.id });
-        if (config && config.totalMembersChan) {
-            const chan = member.guild.channels.cache.get(config.totalMembersChan);
-            if (chan) await chan.setName(`🪐 Total Members: ${member.guild.memberCount}`).catch(() => null);
-        }
-    } catch (err) { console.error(err); }
-});
-
-// ================= DYNAMIC INTERACTIONS & MASTER PANELS (SAFE SESSION STATE) =================
+// ================= DYNAMIC INTERACTIONS (SAFE DM & GUILD PANELS) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
@@ -260,17 +156,15 @@ client.on('interactionCreate', async (interaction) => {
                 if (!guild) return interaction.editReply({ content: '❌ Guild not found.', components: [] });
 
                 if (interaction.customId === 'dm_select_server_bot') {
-                    return interaction.editReply({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
-                        new ActionRowBuilder().addComponents(
-                            new ButtonBuilder().setCustomId('dm_leave_server_action').setLabel(`Leave ${guild.name}`).setStyle(ButtonStyle.Danger)
-                        )
+                    return interaction.editReply({ content: `✅ Selected Server: **${guild.name}**`, components: [
+                        new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('dm_leave_server_action').setLabel(`Leave ${guild.name}`).setStyle(ButtonStyle.Danger))
                     ] });
                 }
 
                 if (interaction.customId === 'dm_master_server_select') {
                     const embedMain = new EmbedBuilder()
                         .setTitle(`🎛️ Master Panel // ${guild.name}`)
-                        .setDescription(`Target Server: **${guild.name}**\n\nNeeche diye gaye buttons me se select karein ki aapko kaun sa panel open karna hai:`)
+                        .setDescription(`Target Server: **${guild.name}**\n\nChoose a panel below:`)
                         .setColor('#5865F2');
 
                     const row = new ActionRowBuilder().addComponents(
@@ -290,7 +184,7 @@ client.on('interactionCreate', async (interaction) => {
                 if (interaction.customId === 'dm_leave_server_action' && guild) {
                     const name = guild.name;
                     await guild.leave();
-                    return interaction.reply({ content: `✅ Successfully left server: **${name}**`, components: [] }).catch(() => {});
+                    return interaction.reply({ content: `✅ Left server: **${name}**`, components: [] }).catch(() => {});
                 }
 
                 if (!guild && interaction.customId.startsWith('dm_open_')) {
@@ -298,20 +192,20 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (interaction.customId === 'dm_open_store') {
-                    const embed = new EmbedBuilder().setTitle(`🛒 Store Dashboard // ${guild.name}`).setDescription(`Manage store inventory and visual setup for **${guild.name}**:`).setColor('#5865F2');
-                    const rowStore1 = new ActionRowBuilder().addComponents(
+                    const embed = new EmbedBuilder().setTitle(`🛒 Store Dashboard // ${guild.name}`).setColor('#5865F2');
+                    const row1 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('dm_btn_store_cfg').setLabel('1. Basic Setup & Stock').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId('dm_btn_store_visual').setLabel('2. Deploy Visual Panel').setStyle(ButtonStyle.Success)
                     );
-                    const rowStore2 = new ActionRowBuilder().addComponents(
+                    const row2 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('dm_btn_store_exe').setLabel('3. Console & Commands').setStyle(ButtonStyle.Secondary),
                         new ButtonBuilder().setCustomId('dm_btn_store_dms').setLabel('4. DM Alerts Settings').setStyle(ButtonStyle.Danger)
                     );
-                    return interaction.reply({ embeds: [embed], components: [rowStore1, rowStore2] }).catch(() => {});
+                    return interaction.reply({ embeds: [embed], components: [row1, row2] }).catch(() => {});
                 }
 
                 if (interaction.customId === 'dm_open_ticket') {
-                    const embed = new EmbedBuilder().setTitle(`🎫 Bot Config Dashboard // ${guild.name}`).setDescription(`Configure tickets, welcome, stats & auto-responses for **${guild.name}**:`).setColor('#00FF00');
+                    const embed = new EmbedBuilder().setTitle(`🎫 Bot Config Dashboard // ${guild.name}`).setColor('#00FF00');
                     const row1 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('dm_btn_tix').setLabel('Setup Tickets').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId('dm_btn_wel').setLabel('Setup Welcome').setStyle(ButtonStyle.Success)
@@ -327,7 +221,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (interaction.customId === 'dm_open_invite') {
-                    const embed = new EmbedBuilder().setTitle(`📊 Invite Panel // ${guild.name}`).setDescription(`Manage simplified invite tracking for **${guild.name}**:`).setColor('#FFCC00');
+                    const embed = new EmbedBuilder().setTitle(`📊 Invite Panel // ${guild.name}`).setColor('#FFCC00');
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('dm_btn_inv_logs_cfg').setLabel('Setup Log Channel').setStyle(ButtonStyle.Secondary),
                         new ButtonBuilder().setCustomId('dm_btn_inv_guild_lb').setLabel('Leaderboard').setStyle(ButtonStyle.Primary)
@@ -335,6 +229,7 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.reply({ embeds: [embed], components: [row] }).catch(() => {});
                 }
 
+                // Modal Triggers from DM
                 if (interaction.customId === 'dm_btn_tix') {
                     const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Setup Support Tickets');
                     modal.addComponents(
@@ -353,8 +248,8 @@ client.on('interactionCreate', async (interaction) => {
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Welcome Message').setRequired(true).setStyle(TextInputStyle.Paragraph)),
                         new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner/Thumbnail URL (Optional)').setRequired(false).setStyle(TextInputStyle.Short)),
-                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Welcome Message (Optional)').setRequired(false).setStyle(TextInputStyle.Paragraph))
+                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner URL (Optional)').setRequired(false).setStyle(TextInputStyle.Short)),
+                        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Welcome (Optional)').setRequired(false).setStyle(TextInputStyle.Paragraph))
                     );
                     return await interaction.showModal(modal);
                 }
@@ -460,6 +355,45 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isButton()) {
+            // In-guild button triggers for setup panels (if opened via slash commands or messages)
+            if (interaction.customId === 'setup_tickets_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Setup Support Tickets');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('Logs Channel ID, Staff Role ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Categories (Comma separated)').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Panel Description || Image URL').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Parent Category ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message Inside Ticket').setRequired(true).setStyle(TextInputStyle.Paragraph))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_welcome_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Setup Welcome System');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Welcome Message').setRequired(true).setStyle(TextInputStyle.Paragraph)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner URL (Optional)').setRequired(false).setStyle(TextInputStyle.Short))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_stats_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('Setup Server Stats Channels');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
+                );
+                return await interaction.showModal(modal);
+            }
+
+            if (interaction.customId === 'setup_auto_btn') {
+                const modal = new ModalBuilder().setCustomId('modal_auto_response').setTitle('Setup Auto Responses');
+                modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('auto_input_box').setLabel('Format: trigger:reply || trigger2:reply2').setRequired(true).setStyle(TextInputStyle.Paragraph)));
+                return await interaction.showModal(modal);
+            }
+
             if (interaction.customId === 'btn_inv_guild_lb') {
                 await interaction.deferReply();
                 const dbData = await InviteData.find({ guildId });
@@ -556,7 +490,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (interaction.customId === 'btn_order_delete') {
-                    await interaction.reply({ content: '🗑️ Closing space arrays permanently in 5 seconds...' });
+                    await interaction.reply({ content: '🗑️ Closing space...' });
                     await OrderTicket.deleteOne({ channelId: interaction.channel.id });
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
@@ -564,17 +498,17 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isModalSubmit()) {
-            await interaction.deferReply({ ephemeral: true });
-
             const targetGuildId = userSelectedGuilds.get(interaction.user.id) || guildId;
 
             if (interaction.customId === 'modal_inv_logs') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const channelId = interaction.fields.getTextInputValue('inv_log_input').trim();
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, { inviteLogChannel: channelId }, { upsert: true });
                 return await interaction.editReply({ content: `✅ Invite logs channel updated to <#${channelId}>.` });
             }
 
             if (interaction.customId === 'modal_ticket') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
                 const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
                 const descData = interaction.fields.getTextInputValue('t_desc').split('||');
@@ -599,6 +533,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_welcome') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     welcomeTitle: interaction.fields.getTextInputValue('w_title'),
                     welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
@@ -610,6 +545,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_stats_setup') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     totalMembersChan: interaction.fields.getTextInputValue('stats_total_input').trim(),
                     onlinePlayersChan: interaction.fields.getTextInputValue('stats_online_input').trim()
@@ -618,6 +554,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'youtube_modal_submit') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     ytChannelId: interaction.fields.getTextInputValue('yt_channel_id_input').trim(),
                     ytLiveChannel: interaction.fields.getTextInputValue('yt_live_chan_input').trim(),
@@ -627,6 +564,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_auto_response') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
                 const autoResponses = [];
                 if (bulkInput) {
@@ -640,6 +578,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_cfg') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const bulkInput = interaction.fields.getTextInputValue('cfg_items');
                 const categories = []; const items = [];
                 if (bulkInput) {
@@ -662,6 +601,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_visual') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const panelTitle = interaction.fields.getTextInputValue('pnl_title');
                 const panelDescription = interaction.fields.getTextInputValue('pnl_desc');
                 const panelBanner = interaction.fields.getTextInputValue('pnl_banner');
@@ -680,6 +620,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_execution') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const consoleChannelId = interaction.fields.getTextInputValue('exe_console');
                 const mappingsRaw = interaction.fields.getTextInputValue('exe_cmds').split('||').map(m => m.trim());
                 const store = await GuildStore.findOne({ guildId: targetGuildId });
@@ -695,6 +636,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_dms') {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildStore.findOneAndUpdate({ guildId: targetGuildId }, {
                     dmApproved: interaction.fields.getTextInputValue('dm_app'),
                     dmRejected: interaction.fields.getTextInputValue('dm_rej'),
@@ -704,6 +646,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId.startsWith('modal_player_checkout_')) {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const itemUniqueId = interaction.customId.replace('modal_player_checkout_', '');
                 const buyerIGN = interaction.fields.getTextInputValue('player_ign');
                 const store = await GuildStore.findOne({ guildId });
