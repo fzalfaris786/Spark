@@ -9,7 +9,7 @@ const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
 
 const parser = new Parser();
-const guildInvites = new Map(); // Global invite cache memory
+const guildInvites = new Map();
 
 const client = new Client({
     intents: [
@@ -18,11 +18,12 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildInvites
+        GatewayIntentBits.GuildInvites,
+        GatewayIntentBits.DirectMessages
     ]
 });
 
-const OWNER_ID = "1266728371719508062";
+const OWNER_ID = '1266728371719508062';
 
 client.commands = new Collection();
 const commandsArray = [];
@@ -39,17 +40,15 @@ client.once('ready', async () => {
         try { await mongoose.connect(process.env.MONGO_URI); } catch (err) { console.error("Mongo Error:", err); }
     }
 
-    // Send Boot DM to Owner
     try {
         const owner = await client.users.fetch(OWNER_ID).catch(() => null);
         if (owner) {
-            await owner.send(`🚀 **Bot Started Successfully!**\nConnected to **${client.guilds.cache.size}** servers. Type \`!panel\` here to manage servers.`);
+            await owner.send(`🚀 **Bot Started Successfully!**\nConnected to **${client.guilds.cache.size}** servers. Type \`!bot panel\` here to manage servers.`);
         }
     } catch (e) {
         console.error("Could not send owner DM on boot:", e);
     }
 
-    // Cache active guild invites on boot
     client.guilds.cache.forEach(async (guild) => {
         try {
             const invites = await guild.invites.fetch();
@@ -67,32 +66,40 @@ client.once('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // 1. Owner DM Panel Handler (!panel) in DMs
-    if (!message.guild) {
-        if (message.author.id === OWNER_ID && message.content.toLowerCase().trim() === '!panel') {
-            const guilds = [...client.guilds.cache.values()];
-            if (guilds.length === 0) return message.reply("❌ Bot is not in any servers.");
+    // 1. Owner DM Panel Handler (!bot panel)
+    if (!message.guild && message.author.id === OWNER_ID) {
+        const text = message.content.trim();
 
-            const options = guilds.slice(0, 25).map(g => ({
-                label: g.name.substring(0, 25),
-                description: `ID: ${g.id} | Members: ${g.memberCount}`,
-                value: `owner_guild_${g.id}`
-            }));
+        if (text === '!bot panel' || text === '!panel') {
+            const guilds = client.guilds.cache.map(g => ({ label: g.name.substring(0, 25), value: g.id }));
+            if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
 
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId('owner_server_select')
-                .setPlaceholder('🌐 Select a server to manage...')
-                .addOptions(options);
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('dm_select_server_bot')
+                    .setPlaceholder('Select a server to manage...')
+                    .addOptions(guilds.slice(0, 25))
+            );
 
-            const row = new ActionRowBuilder().addComponents(menu);
-            return message.reply({ content: '👑 **Bot Owner Control Panel**\nSelect a server below:', components: [row] });
+            const leaveRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('dm_leave_server_btn')
+                    .setLabel('Leave Selected Server')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            return message.reply({ 
+                content: `🤖 **Bot Management Panel**\nSelect a server below:`, 
+                components: [row, leaveRow] 
+            });
         }
         return;
     }
 
-    // 2. Server Auto Responses Handler (Only for Servers)
-    const userMessage = message.content.toLowerCase();
+    if (!message.guild) return;
 
+    // 2. Server Auto Responses Handler
+    const userMessage = message.content.toLowerCase();
     try {
         const config = await GuildConfig.findOne({ guildId: message.guild.id });
         if (!config || !config.autoResponses || config.autoResponses.length === 0) return;
@@ -216,30 +223,35 @@ client.on('guildMemberRemove', async (member) => {
 // ================= DYNAMIC INTERACTIONS (ROUTER) =================
 client.on('interactionCreate', async (interaction) => {
     try {
-        // Owner DM Panel Selections & Buttons
+        // Owner DM Panel Interactions
         if (!interaction.guild && interaction.user.id === OWNER_ID) {
-            if (interaction.isStringSelectMenu() && interaction.customId === 'owner_server_select') {
-                const targetGuildId = interaction.values[0].replace('owner_guild_', '');
-                const targetGuild = client.guilds.cache.get(targetGuildId);
+            if (interaction.isStringSelectMenu() && interaction.customId === 'dm_select_server_bot') {
+                const selectedGuildId = interaction.values[0];
+                const guild = client.guilds.cache.get(selectedGuildId);
+                if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
 
-                if (!targetGuild) return interaction.reply({ content: '❌ Guild not found or bot left.', ephemeral: true });
-
-                const leaveRow = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`owner_leave_${targetGuildId}`).setLabel(`Leave Server (${targetGuild.name})`).setStyle(ButtonStyle.Danger)
-                );
-
-                return interaction.update({ content: `📍 Selected Server: **${targetGuild.name}**\nMembers: ${targetGuild.memberCount}\nClick below to force bot to leave this server:`, components: [leaveRow] });
+                return interaction.update({ 
+                    content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, 
+                    components: [
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`confirm_leave_${selectedGuildId}`)
+                                .setLabel(`Leave ${guild.name}`)
+                                .setStyle(ButtonStyle.Danger)
+                        )
+                    ] 
+                });
             }
 
-            if (interaction.isButton() && interaction.customId.startsWith('owner_leave_')) {
-                const targetGuildId = interaction.customId.replace('owner_leave_', '');
-                const targetGuild = client.guilds.cache.get(targetGuildId);
-
-                if (!targetGuild) return interaction.update({ content: '❌ Bot is already not in this server.', components: [] });
-
-                const name = targetGuild.name;
-                await targetGuild.leave();
-                return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
+            if (interaction.isButton() && interaction.customId.startsWith('confirm_leave_')) {
+                const guildId = interaction.customId.split('_')[2];
+                const guild = client.guilds.cache.get(guildId);
+                if (guild) {
+                    const name = guild.name;
+                    await guild.leave();
+                    return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
+                }
+                return interaction.update({ content: `❌ Server not found.`, components: [] });
             }
             return;
         }
@@ -247,14 +259,12 @@ client.on('interactionCreate', async (interaction) => {
         const guildId = interaction.guild?.id;
         if (!guildId) return;
 
-        // 1. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
-        // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_inv_start') {
                 await InviteData.updateMany({ guildId }, { isEventActive: true, eventRegular: 0, eventLeaves: 0, eventFake: 0 });
@@ -514,7 +524,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
 
@@ -731,7 +740,6 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
