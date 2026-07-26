@@ -4,10 +4,14 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const Parser = require('rss-parser');
+
+// Models
 const GuildConfig = require('./models/GuildConfig');
 const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
 const Ticket = require('./models/Ticket');
+const ServerConfig = require('./models/ServerConfig');
+const Invite = require('./models/Invite');
 
 const parser = new Parser();
 const guildInvites = new Map();
@@ -107,7 +111,7 @@ client.on('messageCreate', async (message) => {
 
             const embed = new EmbedBuilder()
                 .setTitle('🎛️ Spark Master Setup & Panel Dashboard')
-                .setDescription('Pehle upar dropdown se **Server Select** karo, phir neeche diye gaye panels me se jo setup deploy karna hai us par click karo!')
+                .setDescription('Pehle upar dropdown se **Select a Server** karo, phir us server ke saare setup panels open ho jayenge!')
                 .setColor('#5865F2');
 
             return message.reply({ embeds: [embed], components: [serverSelectRow] });
@@ -215,8 +219,17 @@ client.on('guildMemberAdd', async (member) => {
 
             await invData.save();
 
-            if (config && config.inviteLogChannel) {
-                const logChan = member.guild.channels.cache.get(config.inviteLogChannel);
+            // Also update simple Invite model for backup tracking
+            let simpleInv = await Invite.findOne({ guildId: member.guild.id, userId: inviter.id });
+            if (!simpleInv) simpleInv = new Invite({ guildId: member.guild.id, userId: inviter.id, invites: 0 });
+            simpleInv.invites += 1;
+            await simpleInv.save();
+
+            const sConfig = await ServerConfig.findOne({ guildId: member.guild.id });
+            const logChannelId = config?.inviteLogChannel || sConfig?.inviteLogChannelId;
+
+            if (logChannelId) {
+                const logChan = member.guild.channels.cache.get(logChannelId);
                 if (logChan) {
                     const lifetimeTotal = invData.permRegular - invData.permLeaves - invData.permFake;
                     const logCard = `👤 Member     : ${member.user.tag}\n🔗 Invited By : ${inviter.tag}\n--------------------------------\n📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)`;
@@ -238,19 +251,22 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS & MASTER PANELS =================
+// ================= DYNAMIC INTERACTIONS & MASTER PANELS (FIXED TIMEOUT) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
 
+        // OWNER DM PANELS HANDLER (Using deferUpdate/editReply to prevent "This interaction failed")
         if (!interaction.guild && interaction.user.id === OWNER_ID) {
             if (interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate().catch(() => {});
+
                 const selectedGuildId = interaction.values[0];
                 const guild = client.guilds.cache.get(selectedGuildId);
-                if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
+                if (!guild) return interaction.followUp({ content: '❌ Guild not found.', ephemeral: true });
 
                 if (interaction.customId === 'dm_select_server_bot') {
-                    return interaction.update({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
+                    return interaction.editReply({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
                         new ActionRowBuilder().addComponents(
                             new ButtonBuilder().setCustomId(`confirm_leave_${selectedGuildId}`).setLabel(`Leave ${guild.name}`).setStyle(ButtonStyle.Danger)
                         )
@@ -296,7 +312,7 @@ client.on('interactionCreate', async (interaction) => {
                         new ButtonBuilder().setCustomId(`dm_btn_inv_logs_cfg_${selectedGuildId}`).setLabel('Setup Log Channel').setStyle(ButtonStyle.Secondary)
                     );
 
-                    return interaction.update({ 
+                    return interaction.editReply({ 
                         content: `📦 **All Setup Panels Loaded for ${guild.name}:**`, 
                         embeds: [embedMain], 
                         components: [row1, row2, row3, rowStore1, rowStore2, rowInvite1, rowInvite2] 
@@ -305,14 +321,15 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.isButton() && interaction.customId.startsWith('confirm_leave_')) {
+                await interaction.deferUpdate().catch(() => {});
                 const guildId = interaction.customId.split('_')[2];
                 const guild = client.guilds.cache.get(guildId);
                 if (guild) {
                     const name = guild.name;
                     await guild.leave();
-                    return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
+                    return interaction.editReply({ content: `✅ Successfully left server: **${name}**`, components: [] });
                 }
-                return interaction.update({ content: `❌ Server not found.`, components: [] });
+                return interaction.editReply({ content: `❌ Server not found.`, components: [] });
             }
             return;
         }
