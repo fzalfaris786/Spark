@@ -271,48 +271,39 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (interaction.customId === 'dm_master_server_select') {
+                    // Safe defer update to completely prevent "Interaction Failed"
+                    await interaction.deferUpdate().catch(() => {});
+
                     const embedMain = new EmbedBuilder()
-                        .setTitle(`🎛️ Master Control & Setup Dashboard // ${guild.name}`)
-                        .setDescription(`Target Server Selected: **${guild.name}** (\`${guild.id}\`)\n\nNeeche diye gaye saare modules se aap is server ka complete setup direct DM se control kar sakte hain:`)
+                        .setTitle(`🎛️ Master Control Dashboard // ${guild.name}`)
+                        .setDescription(`Target Server: **${guild.name}**\n\nNeeche diye gaye buttons se setup control karein:`)
                         .setColor('#5865F2');
 
-                    // 1. Bot Configuration Dashboard Buttons (/panel)
                     const row1 = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`dm_btn_tix_${selectedGuildId}`).setLabel('Setup Tickets').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`dm_btn_wel_${selectedGuildId}`).setLabel('Setup Welcome').setStyle(ButtonStyle.Success)
+                        new ButtonBuilder().setCustomId(`dm_btn_wel_${selectedGuildId}`).setLabel('Setup Welcome').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`dm_btn_stats_${selectedGuildId}`).setLabel('Server Stats').setStyle(ButtonStyle.Secondary)
                     );
+
                     const row2 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`dm_btn_stats_${selectedGuildId}`).setLabel('Setup Server Stats').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`dm_btn_yt_${selectedGuildId}`).setLabel('Setup YouTube').setStyle(ButtonStyle.Danger)
-                    );
-                    const row3 = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`dm_btn_yt_${selectedGuildId}`).setLabel('Setup YouTube').setStyle(ButtonStyle.Danger),
                         new ButtonBuilder().setCustomId(`dm_btn_auto_${selectedGuildId}`).setLabel('Auto Response').setStyle(ButtonStyle.Primary)
                     );
 
-                    // 2. Store Control Dashboard Buttons (/store panel)
-                    const rowStore1 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`dm_btn_store_cfg_${selectedGuildId}`).setLabel('1. Basic Setup & Stock').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`dm_btn_store_visual_${selectedGuildId}`).setLabel('2. Deploy Visual Panel').setStyle(ButtonStyle.Success)
-                    );
-                    const rowStore2 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`dm_btn_store_exe_${selectedGuildId}`).setLabel('3. Console & Commands').setStyle(ButtonStyle.Secondary),
-                        new ButtonBuilder().setCustomId(`dm_btn_store_dms_${selectedGuildId}`).setLabel('4. DM Alerts Settings').setStyle(ButtonStyle.Danger)
+                    const rowStore = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`dm_btn_store_cfg_${selectedGuildId}`).setLabel('Store Stock').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`dm_btn_store_visual_${selectedGuildId}`).setLabel('Store Visual').setStyle(ButtonStyle.Success)
                     );
 
-                    // 3. Invite Tracker Dashboard Buttons (/invite panel)
-                    const rowInvite1 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`dm_btn_inv_start_${selectedGuildId}`).setLabel('Start Event Tracker').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`dm_btn_inv_reset_${selectedGuildId}`).setLabel('Reset Event Data').setStyle(ButtonStyle.Danger)
-                    );
-                    const rowInvite2 = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`dm_btn_inv_guild_lb_${selectedGuildId}`).setLabel('Guild Leaderboard').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`dm_btn_inv_logs_cfg_${selectedGuildId}`).setLabel('Setup Log Channel').setStyle(ButtonStyle.Secondary)
+                    const rowInvite = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`dm_btn_inv_start_${selectedGuildId}`).setLabel('Start Events').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`dm_btn_inv_guild_lb_${selectedGuildId}`).setLabel('Leaderboard').setStyle(ButtonStyle.Primary)
                     );
 
-                    return interaction.update({ 
-                        content: `📦 **All Setup Panels Loaded for ${guild.name}:**`, 
+                    return interaction.editReply({ 
+                        content: `📦 **Panels Loaded for ${guild.name}:**`, 
                         embeds: [embedMain], 
-                        components: [row1, row2, row3, rowStore1, rowStore2, rowInvite1, rowInvite2] 
+                        components: [row1, row2, rowStore, rowInvite] 
                     });
                 }
             }
@@ -396,7 +387,6 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // --- UPGRADED TICKET CLAIM HANDLER (LOCKED & RENAME) ---
             const config = await GuildConfig.findOne({ guildId });
             if (interaction.customId === 'claim_ticket') {
                 if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
@@ -405,7 +395,7 @@ client.on('interactionCreate', async (interaction) => {
 
                 const ticketDoc = await Ticket.findOne({ channelId: interaction.channel.id });
                 if (ticketDoc && ticketDoc.status === 'claimed') {
-                    return await interaction.reply({ content: `⚠️ This ticket is already claimed by <@${ticketDoc.claimedBy}>! Another staff member cannot claim it.`, ephemeral: true });
+                    return await interaction.reply({ content: `⚠️ This ticket is already claimed by <@${ticketDoc.claimedBy}>!`, ephemeral: true });
                 }
 
                 if (ticketDoc) {
@@ -420,7 +410,7 @@ client.on('interactionCreate', async (interaction) => {
                     await interaction.channel.setName(`claimed-${interaction.user.username}`);
                 } catch (e) {}
 
-                await interaction.reply({ content: `🔒 Ticket successfully claimed by **${interaction.user.tag}**! Status locked.` });
+                await interaction.reply({ content: `🔒 Ticket successfully claimed by **${interaction.user.tag}**!` });
                 return await interaction.message.edit({ components: [interaction.message.components[0]] });
             }
 
@@ -436,7 +426,7 @@ client.on('interactionCreate', async (interaction) => {
                     if (c) await c.send({ content: `🗑️ Closed by ${interaction.user.tag}`, files: [attachment] }).catch(() => null);
                 }
                 setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-                        }
+            }
 
                     if (interaction.customId.startsWith('btn_trigger_checkout_')) {
                 const itemObjectId = interaction.customId.replace('btn_trigger_checkout_', '');
