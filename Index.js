@@ -9,7 +9,7 @@ const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
 
 const parser = new Parser();
-const guildInvites = new Map();
+const guildInvites = new Map(); // Global invite cache memory
 
 const client = new Client({
     intents: [
@@ -34,7 +34,7 @@ for (const file of commandFiles) {
 }
 
 client.once('ready', async () => {
-    console.log(`🔥 ${client.user.tag} online[span_7](start_span)[span_7](end_span)!`);
+    console.log(`🔥 ${client.user.tag} online!`);
     if (process.env.MONGO_URI) {
         try { await mongoose.connect(process.env.MONGO_URI); } catch (err) { console.error("Mongo Error:", err); }
     }
@@ -49,6 +49,7 @@ client.once('ready', async () => {
         console.error("Could not send owner DM on boot:", e);
     }
 
+    // Cache active guild invites on boot
     client.guilds.cache.forEach(async (guild) => {
         try {
             const invites = await guild.invites.fetch();
@@ -62,13 +63,13 @@ client.once('ready', async () => {
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error("Slash Reg Error:", e); }
 });
 
-// ================= OWNER DM PANEL INTERCEPTOR (!panel) =================
+// ================= MESSAGE & OWNER DM INTERCEPTOR =================
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // Check if DM from Owner
-    if (!message.guild && message.author.id === OWNER_ID) {
-        if (message.content.toLowerCase() === '!panel') {
+    // 1. Owner DM Panel Handler (!panel)
+    if (!message.guild) {
+        if (message.author.id === OWNER_ID && message.content.toLowerCase() === '!panel') {
             const guilds = [...client.guilds.cache.values()];
             if (guilds.length === 0) return message.reply("❌ Bot is not in any servers.");
 
@@ -86,9 +87,10 @@ client.on('messageCreate', async (message) => {
             const row = new ActionRowBuilder().addComponents(menu);
             return message.reply({ content: '👑 **Bot Owner Control Panel**\nSelect a server below:', components: [row] });
         }
+        return;
     }
 
-    if (!message.guild) return;
+    // 2. Server Auto Responses Handler
     const userMessage = message.content.toLowerCase();
 
     try {
@@ -245,12 +247,14 @@ client.on('interactionCreate', async (interaction) => {
         const guildId = interaction.guild?.id;
         if (!guildId) return;
 
+        // 1. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
+        // 2. BUTTON INTERACTIONS
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_inv_start') {
                 await InviteData.updateMany({ guildId }, { isEventActive: true, eventRegular: 0, eventLeaves: 0, eventFake: 0 });
@@ -347,6 +351,15 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
+            if (interaction.customId === 'setup_store_execution') {
+                const modal = new ModalBuilder().setCustomId('modal_store_execution').setTitle('3. Console & Commands');
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_console').setLabel('Console Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_cmds').setLabel('Command Mappings').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Elite:lp user {name} parent set elite || Shine Key:givekey {name} shine 1'))
+                );
+                return await interaction.showModal(modal);
+            }
+
             if (interaction.customId === 'setup_store_dms') {
                 const store = await GuildStore.findOne({ guildId });
                 const modal = new ModalBuilder().setCustomId('modal_store_dms').setTitle('4. DM Alert Templates');
@@ -422,19 +435,15 @@ client.on('interactionCreate', async (interaction) => {
                     return await interaction.reply({ content: '❌ Staff only.', ephemeral: true });
                 }
 
-                // Check if already claimed in channel name or components
                 if (interaction.channel.name.startsWith('claimed-')) {
                     return await interaction.reply({ content: '⚠️ This ticket is already claimed!', ephemeral: true });
                 }
 
-                // Rename channel to include claimed status
                 const newName = interaction.channel.name.replace('ticket-', 'claimed-');
                 await interaction.channel.setName(newName).catch(() => {});
 
                 await interaction.reply({ content: `🔒 Ticket claimed by ${interaction.user}` });
 
-                // Disable Claim button so other staff can't claim it again
-                const oldRow = interaction.message.components[0];
                 const newRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('claim_ticket').setLabel('Claimed').setStyle(ButtonStyle.Success).setDisabled(true),
                     new ButtonBuilder().setCustomId('close_ticket').setLabel('Close').setStyle(ButtonStyle.Danger)
@@ -505,6 +514,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // 3. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
 
@@ -721,6 +731,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // 4. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
@@ -787,7 +798,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ================= TIMED LOOP (Updated for Member Count only) =================
+// ================= TIMED LOOP =================
 setInterval(async () => {
     try {
         const stats = await GuildConfig.find({ totalMembersChan: { $ne: null } });
