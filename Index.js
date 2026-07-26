@@ -7,9 +7,12 @@ const Parser = require('rss-parser');
 const GuildConfig = require('./models/GuildConfig');
 const { GuildStore, OrderTicket } = require('./models/GuildStore');
 const InviteData = require('./models/InviteData');
+const Ticket = require('./models/Ticket'); // Upgraded ticket model
 
 const parser = new Parser();
 const guildInvites = new Map(); // Global invite cache memory
+
+const OWNER_ID = '1266728371719508062';
 
 const client = new Client({
     intents: [
@@ -18,7 +21,8 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildInvites
+        GatewayIntentBits.GuildInvites,
+        GatewayIntentBits.DirectMessages
     ]
 });
 
@@ -49,10 +53,67 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try { await rest.put(Routes.applicationCommands(client.user.id), { body: commandsArray }); } catch (e) { console.error("Slash Reg Error:", e); }
+
+    // Send Startup DM to Owner
+    try {
+        const owner = await client.users.fetch(OWNER_ID);
+        if (owner) {
+            await owner.send(`🟢 **Spark Bot is Online & Ready!**\nLogged in as: \`${client.user.tag}\`\nActive Servers: \`${client.guilds.cache.size}\``).catch(() => null);
+        }
+    } catch (e) {}
 });
 
-// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR =================
+// Shutdown Hook for DM Alert
+process.on('SIGINT', async () => {
+    try {
+        const owner = await client.users.fetch(OWNER_ID);
+        if (owner) {
+            await owner.send(`🔴 **Spark Bot is Shutting Down / Offline!**`).catch(() => null);
+        }
+    } catch (e) {}
+    process.exit(0);
+});
+
+// ================= DYNAMIC AUTO RESPONSE INTERCEPTOR & OWNER DM PANELS =================
 client.on('messageCreate', async (message) => {
+    // 1. Owner DM Control Panels (!bot panel & !panel)
+    if (!message.guild && message.author.id === OWNER_ID) {
+        const text = message.content.trim();
+
+        if (text === '!bot panel') {
+            const guilds = client.guilds.cache.map(g => ({ label: g.name.substring(0, 25), value: g.id }));
+            if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
+
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('dm_select_server_bot')
+                    .setPlaceholder('Select a server to manage...')
+                    .addOptions(guilds.slice(0, 25))
+            );
+
+            const leaveRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('dm_leave_server_btn').setLabel('Leave Selected Server').setStyle(ButtonStyle.Danger)
+            );
+
+            return message.reply({ content: `🤖 **Spark Bot Management Panel**\nSelect a server below:`, components: [row, leaveRow] });
+        }
+
+        if (text === '!panel') {
+            const guilds = client.guilds.cache.map(g => ({ label: g.name.substring(0, 25), value: g.id }));
+            if (guilds.length === 0) return message.reply('❌ Bot is in no servers.');
+
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('dm_setup_panel_select')
+                    .setPlaceholder('Select server for setup & panels...')
+                    .addOptions(guilds.slice(0, 25))
+            );
+
+            return message.reply({ content: `🎛️ **Spark Master Setup Panel**\nSelect server to configure Ticket, Invites & Store directly from DM:`, components: [row] });
+        }
+        return;
+    }
+
     if (message.author.bot || !message.guild) return;
     const userMessage = message.content.toLowerCase();
 
@@ -158,13 +219,7 @@ client.on('guildMemberAdd', async (member) => {
                 const logChan = member.guild.channels.cache.get(config.inviteLogChannel);
                 if (logChan) {
                     const lifetimeTotal = invData.permRegular - invData.permLeaves - invData.permFake;
-                    const logCard = 
-```text
-👤 Member     : ${member.user.tag}
-🔗 Invited By : ${inviter.tag}
---------------------------------
-📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)
-```;
+                    const logCard = `👤 Member     : ${member.user.tag}\n🔗 Invited By : ${inviter.tag}\n--------------------------------\n📊 Lifetime Stats: ${lifetimeTotal} Total (${invData.permRegular} Reg | ${invData.permLeaves} Leaves)`;
                     const embed = new EmbedBuilder().setTitle('📥 MEMBER JOIN LOG').setDescription(logCard).setColor('#00FF00').setTimestamp();
                     await logChan.send({ embeds: [embed] }).catch(() => null);
                 }
@@ -183,20 +238,60 @@ client.on('guildMemberRemove', async (member) => {
     } catch (err) { console.error(err); }
 });
 
-// ================= DYNAMIC INTERACTIONS (ROUTER) =================
+// ================= DYNAMIC INTERACTIONS (ROUTER & UPGRADED TICKETS) =================
 client.on('interactionCreate', async (interaction) => {
     try {
         const guildId = interaction.guild?.id;
+
+        // 1. OWNER DM SELECT MENUS & BUTTONS (!bot panel & !panel)
+        if (!interaction.guild && interaction.user.id === OWNER_ID) {
+            if (interaction.isStringSelectMenu()) {
+                const selectedGuildId = interaction.values[0];
+                const guild = client.guilds.cache.get(selectedGuildId);
+                if (!guild) return interaction.reply({ content: '❌ Guild not found.', ephemeral: true });
+
+                if (interaction.customId === 'dm_select_server_bot') {
+                    return interaction.update({ content: `✅ Selected Server: **${guild.name}**\nClick below to leave this server if needed:`, components: [
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId(`confirm_leave_${selectedGuildId}`).setLabel(`Leave ${guild.name}`).setStyle(ButtonStyle.Danger)
+                        )
+                    ] });
+                }
+
+                if (interaction.customId === 'dm_setup_panel_select') {
+                    let config = await GuildConfig.findOne({ guildId: selectedGuildId });
+                    const embed = new EmbedBuilder()
+                        .setTitle(`⚙️ Master Setup // ${guild.name}`)
+                        .setDescription(`Manage server settings directly from your DM:\n\n• **Invite Logs:** \`${config?.inviteLogChannel || 'Not Set'}\`\n• **Ticket Category:** \`${config?.ticketParent || 'Not Set'}\``)
+                        .setColor('#00FF00');
+
+                    return interaction.update({ content: null, embeds: [embed], components: [] });
+                }
+            }
+
+            if (interaction.isButton() && interaction.customId.startsWith('confirm_leave_')) {
+                const guildId = interaction.customId.split('_')[2];
+                const guild = client.guilds.cache.get(guildId);
+                if (guild) {
+                    const name = guild.name;
+                    await guild.leave();
+                    return interaction.update({ content: `✅ Successfully left server: **${name}**`, components: [] });
+                }
+                return interaction.update({ content: `❌ Server not found or already left.`, components: [] });
+            }
+            return;
+        }
+
         if (!guildId) return;
 
-        // 1. SLASH COMMANDS
+        // 2. SLASH COMMANDS
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
             if (command) await command.execute(interaction);
             return;
         }
 
-        // 2. BUTTON INTERACTIONS
+        // 3. BUTTON INTERACTIONS
         if (interaction.isButton()) {
             // --- INVITE TRACKER DASHBOARD BUTTONS ---
             if (interaction.customId === 'btn_inv_start') {
@@ -244,26 +339,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 str += '```';
 
-                const embed = new EmbedBuilder().setTitle('🏆 GUILD LIFETIME LEADERBOARD').setDescription(str).setColor('#00FF00');
-                return await interaction.followUp({ embeds: [embed] });
-            }
-            
-            
-            if (interaction.customId === 'btn_inv_event_lb') {
-                await interaction.deferReply();
-                const allData = await InviteData.find({ guildId });
-                const sorted = allData.map(d => ({ userId: d.userId, total: d.eventRegular - d.eventLeaves - d.eventFake, reg: d.eventRegular, lvs: d.eventLeaves }))
-                    .sort((a,b) => b.total - a.total).slice(0, 10);
-
-                let str = '```text\n';
-                const medals = ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️'];
-                for (let i = 0; i < sorted.length; i++) {
-                    const u = await interaction.client.users.fetch(sorted[i].userId).catch(() => null);
-                    str += `${medals[i]} ${i+1}. ${(u ? u.username : 'Unknown').padEnd(12, ' ')} • ${sorted[i].total} Total (${sorted[i].reg} Reg | ${sorted[i].lvs} Lvs)\n`;
-                }
-                str += '```';
-
-                const embed = new EmbedBuilder().setTitle('⚡ ACTIVE EVENT LEADERBOARD').setDescription(str).setColor('#FFCC00');
+                const embed = new EmbedBuilder().setTitle('🏆 TOP 10 LIFETIME LEADERBOARD').setDescription(str).setColor('#00FF00');
                 return await interaction.followUp({ embeds: [embed] });
             }
 
@@ -273,119 +349,37 @@ client.on('interactionCreate', async (interaction) => {
                 return await interaction.showModal(modal);
             }
 
-            // --- STORE DASHBOARD BUTTONS ---
-            if (interaction.customId === 'setup_store_cfg') {
-                const modal = new ModalBuilder().setCustomId('modal_store_cfg').setTitle('1. Basic Setup & Stock');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_name').setLabel('Server Name').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., SparkleMc')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_role').setLabel('Admin Role ID').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., 123456789012345678')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_logs').setLabel('Logs Channel ID').setRequired(true).setStyle(TextInputStyle.Short).setPlaceholder('e.g., 123456789012345678')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('cfg_items').setLabel('Items & Stock Setup').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Ranks:Elite-100 || Keys:Shine Key-50'))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_store_visual') {
-                const modal = new ModalBuilder().setCustomId('modal_store_visual').setTitle('2. Visual Panel Deploy');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_title').setLabel('Embed Header Title').setRequired(true).setStyle(TextInputStyle.Short).setValue('🛒 SERVER STOREFRONT')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_desc').setLabel('Embed Description Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue('Select a category below to view items.')),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_banner').setLabel('Banner Image CDN Link').setRequired(false).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('pnl_chan').setLabel('Target Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_store_execution') {
-                const modal = new ModalBuilder().setCustomId('modal_store_execution').setTitle('3. Console & Commands');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_console').setLabel('Console Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('exe_cmds').setLabel('Command Mappings').setRequired(true).setStyle(TextInputStyle.Paragraph).setPlaceholder('Elite:lp user {name} parent set elite || Shine Key:givekey {name} shine 1'))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_store_dms') {
-                const store = await GuildStore.findOne({ guildId });
-                const modal = new ModalBuilder().setCustomId('modal_store_dms').setTitle('4. DM Alert Templates');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_app').setLabel('Approved DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmApproved || "📦 Order Approved [{{server}}]! Item: {{item}}")),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_rej').setLabel('Rejected DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmRejected || "❌ Order Rejected [{{server}}]! Item: {{item}}")),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('dm_pend').setLabel('12h Pending Reminder DM Text').setRequired(true).setStyle(TextInputStyle.Paragraph).setValue(store?.dmPendingReminder || "⏰ Pending Order Reminder [{{server}}]! Item: {{item}}"))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_stats_btn') {
-                const modal = new ModalBuilder().setCustomId('modal_stats_setup').setTitle('📊 Server Stats Setup');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_total_input').setLabel('Total Members Voice ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('stats_online_input').setLabel('Online Players Voice ID').setRequired(true).setStyle(TextInputStyle.Short))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_youtube_btn') {
-                const modal = new ModalBuilder().setCustomId('youtube_modal_submit').setTitle('📺 YouTube System Setup');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_channel_id_input').setLabel('YouTube Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_live_chan_input').setLabel('Live Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('yt_upload_chan_input').setLabel('Upload Alert Channel ID').setRequired(true).setStyle(TextInputStyle.Short))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_welcome_btn') {
-                const modal = new ModalBuilder().setCustomId('modal_welcome').setTitle('Welcome Configuration');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_title').setLabel('Embed Title').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_msg').setLabel('Message').setRequired(true).setStyle(TextInputStyle.Paragraph)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_chan').setLabel('Welcome Channel ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_thumb').setLabel('Banner Image URL').setRequired(false).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('w_dm').setLabel('DM Text').setRequired(false).setStyle(TextInputStyle.Paragraph))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_tickets_btn' || interaction.customId === 'setup_ticket_btn') {
-                const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Advanced Ticket Setup');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_desc').setLabel('Description').setRequired(true).setStyle(TextInputStyle.Paragraph)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_cats').setLabel('Categories (Comma separated)').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_parent').setLabel('Category ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_logs').setLabel('LOGS_ID, STAFF_ROLE_ID').setRequired(true).setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t_msg').setLabel('Welcome Message').setRequired(true).setStyle(TextInputStyle.Paragraph))
-                );
-                return await interaction.showModal(modal);
-            }
-
-            if (interaction.customId === 'setup_auto_btn') {
-                const modal = new ModalBuilder().setCustomId('modal_auto_response').setTitle('💬 Auto Response Core');
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder()
-                            .setCustomId('auto_input_box')
-                            .setLabel('Format: trigger:reply || trigger:reply')
-                            .setPlaceholder('e.g., ip:play.sparklemc.in || upi:Scanner text')
-                            .setRequired(true)
-                            .setStyle(TextInputStyle.Paragraph)
-                    )
-                );
-                return await interaction.showModal(modal);
-            }
-
-            // --- SUPPORT TICKET ACTIONS ---
+            // --- UPGRADED TICKET CLAIM HANDLER (LOCKED & RENAME) ---
             const config = await GuildConfig.findOne({ guildId });
             if (interaction.customId === 'claim_ticket') {
                 if (config && config.ticketRole && !interaction.member.roles.cache.has(config.ticketRole)) {
                     return await interaction.reply({ content: '❌ Staff only.', ephemeral: true });
                 }
-                await interaction.reply({ content: `🔒 Ticket claimed by ${interaction.user}` });
+
+                const ticketDoc = await Ticket.findOne({ channelId: interaction.channel.id });
+                if (ticketDoc && ticketDoc.status === 'claimed') {
+                    return await interaction.reply({ content: `⚠️ This ticket is already claimed by <@${ticketDoc.claimedBy}>! Another staff member cannot claim it.`, ephemeral: true });
+                }
+
+                if (ticketDoc) {
+                    ticketDoc.status = 'claimed';
+                    ticketDoc.claimedBy = interaction.user.id;
+                    await ticketDoc.save();
+                } else {
+                    await Ticket.create({ guildId, channelId: interaction.channel.id, claimedBy: interaction.user.id, status: 'claimed' });
+                }
+
+                try {
+                    await interaction.channel.setName(`claimed-${interaction.user.username}`);
+                } catch (e) {}
+
+                await interaction.reply({ content: `🔒 Ticket successfully claimed by **${interaction.user.tag}**! Status locked.` });
                 return await interaction.message.edit({ components: [interaction.message.components[0]] });
             }
 
             if (interaction.customId === 'close_ticket') {
                 await interaction.reply('🔒 Closing channel in 5 seconds...');
+                await Ticket.deleteOne({ channelId: interaction.channel.id });
                 const fetched = await interaction.channel.messages.fetch({ limit: 100 });
                 let txt = '';
                 [...fetched.values()].reverse().forEach(m => { txt += `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content}\n`; });
@@ -445,8 +439,9 @@ client.on('interactionCreate', async (interaction) => {
                     setTimeout(() => interaction.channel.delete().catch(() => null), 5000);
                 }
             }
-                                                         }
-                // 3. MODAL SUBMISSIONS HANDLER
+        }
+
+        // 4. MODAL SUBMISSIONS HANDLER
         if (interaction.isModalSubmit()) {
             await interaction.deferReply({ ephemeral: true });
 
@@ -484,7 +479,7 @@ client.on('interactionCreate', async (interaction) => {
                 const tId = interaction.fields.getTextInputValue('stats_total_input').trim();
                 const oId = interaction.fields.getTextInputValue('stats_online_input').trim();
                 await GuildConfig.findOneAndUpdate({ guildId }, { totalMembersChan: tId, onlinePlayersChan: oId }, { upsert: true });
-                return await interaction.editReply({ content: '✅ **Saved Stats Configuration Successfully!** Voice channels connected.' });
+                return await interaction.editReply({ content: '✅ **Saved Stats Configuration Successfully!**' });
             }
 
             if (interaction.customId === 'youtube_modal_submit') {
@@ -492,7 +487,7 @@ client.on('interactionCreate', async (interaction) => {
                 const lId = interaction.fields.getTextInputValue('yt_live_chan_input').trim();
                 const uId = interaction.fields.getTextInputValue('yt_upload_chan_input').trim();
                 await GuildConfig.findOneAndUpdate({ guildId }, { ytChannelId: ytId, ytLiveChannel: lId, ytUploadChannel: uId }, { upsert: true });
-                return await interaction.editReply({ content: '✅ **Connected YouTube System Successfully!** Alerts enabled.' });
+                return await interaction.editReply({ content: '✅ **Connected YouTube System Successfully!**' });
             }
 
             if (interaction.customId === 'modal_welcome') {
@@ -536,7 +531,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 await GuildStore.findOneAndUpdate({ guildId }, { serverName, adminRoleId, logsChannelId, categories, items }, { upsert: true });
-                return await interaction.editReply({ content: '✅ **Button 1 Saved!** Stock & Categories updated.' });
+                return await interaction.editReply({ content: '✅ Stock & Categories updated.' });
             }
 
             if (interaction.customId === 'modal_store_visual') {
@@ -553,17 +548,13 @@ client.on('interactionCreate', async (interaction) => {
                 const embed = new EmbedBuilder().setTitle(panelTitle).setDescription(panelDescription).setColor('#5865F2').setTimestamp();
                 if (panelBanner && panelBanner.startsWith('http')) embed.setImage(panelBanner);
 
-                if (!store.categories || store.categories.length === 0) {
-                    return await interaction.editReply({ content: '❌ Please setup Button 1 (Stock) first!' });
-                }
-
                 const options = store.categories.map(cat => ({ label: cat, value: `store_cat_${cat}` }));
                 const row = new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('store_category_select').setPlaceholder('🗂️ Choose a Category...').addOptions(options)
                 );
 
                 await targetChannel.send({ embeds: [embed], components: [row] });
-                return await interaction.editReply({ content: `🚀 **Button 2 Complete!** Store deployed in <#${targetChanId}>.` });
+                return await interaction.editReply({ content: `🚀 Store deployed in <#${targetChanId}>.` });
             }
 
             if (interaction.customId === 'modal_store_execution') {
@@ -583,7 +574,7 @@ client.on('interactionCreate', async (interaction) => {
                 });
 
                 await store.save();
-                return await interaction.editReply({ content: '⚙️ **Button 3 Complete!** Commands mapped.' });
+                return await interaction.editReply({ content: '⚙️ Commands mapped.' });
             }
 
             if (interaction.customId === 'modal_store_dms') {
@@ -592,7 +583,7 @@ client.on('interactionCreate', async (interaction) => {
                 const dmPendingReminder = interaction.fields.getTextInputValue('dm_pend');
 
                 await GuildStore.findOneAndUpdate({ guildId }, { dmApproved, dmRejected, dmPendingReminder }, { upsert: true });
-                return await interaction.editReply({ content: '✅ **Button 4 Complete!** Custom DM Alert templates saved.' });
+                return await interaction.editReply({ content: '✅ Custom DM templates saved.' });
             }
 
             if (interaction.customId === 'modal_auto_response') {
@@ -611,7 +602,7 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 }
                 await GuildConfig.findOneAndUpdate({ guildId }, { autoResponses }, { upsert: true });
-                return await interaction.editReply({ content: '✅ Custom auto-responses setup live!' });
+                return await interaction.editReply({ content: '✅ Auto-responses setup live!' });
             }
 
             if (interaction.customId.startsWith('modal_player_checkout_')) {
@@ -621,7 +612,7 @@ client.on('interactionCreate', async (interaction) => {
                 const store = await GuildStore.findOne({ guildId });
                 const item = store?.items.find(i => i._id.toString() === itemUniqueId);
 
-                if (!item) return await interaction.editReply({ content: '❌ Item expired or deleted.' });
+                if (!item) return await interaction.editReply({ content: '❌ Item expired.' });
 
                 const ticketRoom = await interaction.guild.channels.create({
                     name: `order-${interaction.user.username}`,
@@ -633,13 +624,8 @@ client.on('interactionCreate', async (interaction) => {
                 });
 
                 await OrderTicket.create({
-                    guildId,
-                    channelId: ticketRoom.id,
-                    buyerId: interaction.user.id,
-                    buyerIGN,
-                    itemName: item.name,
-                    itemPrice: item.price,
-                    itemCategory: item.category
+                    guildId, channelId: ticketRoom.id, buyerId: interaction.user.id,
+                    buyerIGN, itemName: item.name, itemPrice: item.price, itemCategory: item.category
                 });
 
                 const embed = new EmbedBuilder()
@@ -664,7 +650,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // 4. SELECT MENUS HANDLER
+        // 5. SELECT MENUS HANDLER
         if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_select') {
                 const config = await GuildConfig.findOne({ guildId });
