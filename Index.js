@@ -355,7 +355,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isButton()) {
-            // In-guild button triggers for setup panels (if opened via slash commands or messages)
             if (interaction.customId === 'setup_tickets_btn') {
                 const modal = new ModalBuilder().setCustomId('modal_ticket').setTitle('Setup Support Tickets');
                 modal.addComponents(
@@ -498,17 +497,16 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isModalSubmit()) {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
             const targetGuildId = userSelectedGuilds.get(interaction.user.id) || guildId;
 
             if (interaction.customId === 'modal_inv_logs') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const channelId = interaction.fields.getTextInputValue('inv_log_input').trim();
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, { inviteLogChannel: channelId }, { upsert: true });
                 return await interaction.editReply({ content: `✅ Invite logs channel updated to <#${channelId}>.` });
             }
 
             if (interaction.customId === 'modal_ticket') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const logsData = interaction.fields.getTextInputValue('t_logs').split(',');
                 const cats = interaction.fields.getTextInputValue('t_cats').split(',').map(c => c.trim());
                 const descData = interaction.fields.getTextInputValue('t_desc').split('||');
@@ -522,18 +520,19 @@ client.on('interactionCreate', async (interaction) => {
                 }, { upsert: true, new: true });
 
                 const targetGuild = client.guilds.cache.get(targetGuildId);
-                const targetChannel = targetGuild?.channels.cache.find(c => c.isTextBased() && c.permissionsFor(targetGuild.members.me)?.has(PermissionFlagsBits.SendMessages));
-                if (targetChannel) {
-                    const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(descData[0]?.trim()).setColor('#5865F2');
-                    const options = cats.map(cat => ({ label: cat, value: cat }));
-                    const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
-                    await targetChannel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
+                if (targetGuild) {
+                    const targetChannel = targetGuild.channels.cache.find(c => c.isTextBased() && c.permissionsFor(targetGuild.members.me)?.has(PermissionFlagsBits.SendMessages));
+                    if (targetChannel) {
+                        const embed = new EmbedBuilder().setTitle('🎫 Create a Ticket').setDescription(descData[0]?.trim()).setColor('#5865F2');
+                        const options = cats.map(cat => ({ label: cat, value: cat }));
+                        const menu = new StringSelectMenuBuilder().setCustomId('ticket_select').addOptions(options);
+                        await targetChannel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] }).catch(() => {});
+                    }
                 }
                 return await interaction.editReply({ content: '✅ Deployed Support Tickets Panel Successfully!' });
             }
 
             if (interaction.customId === 'modal_welcome') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     welcomeTitle: interaction.fields.getTextInputValue('w_title'),
                     welcomeMessage: interaction.fields.getTextInputValue('w_msg'),
@@ -545,7 +544,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_stats_setup') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     totalMembersChan: interaction.fields.getTextInputValue('stats_total_input').trim(),
                     onlinePlayersChan: interaction.fields.getTextInputValue('stats_online_input').trim()
@@ -554,7 +552,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'youtube_modal_submit') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildConfig.findOneAndUpdate({ guildId: targetGuildId }, {
                     ytChannelId: interaction.fields.getTextInputValue('yt_channel_id_input').trim(),
                     ytLiveChannel: interaction.fields.getTextInputValue('yt_live_chan_input').trim(),
@@ -564,7 +561,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_auto_response') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const bulkInput = interaction.fields.getTextInputValue('auto_input_box');
                 const autoResponses = [];
                 if (bulkInput) {
@@ -578,7 +574,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_cfg') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const bulkInput = interaction.fields.getTextInputValue('cfg_items');
                 const categories = []; const items = [];
                 if (bulkInput) {
@@ -601,26 +596,27 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_visual') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const panelTitle = interaction.fields.getTextInputValue('pnl_title');
                 const panelDescription = interaction.fields.getTextInputValue('pnl_desc');
                 const panelBanner = interaction.fields.getTextInputValue('pnl_banner');
                 const targetChanId = interaction.fields.getTextInputValue('pnl_chan');
                 const store = await GuildStore.findOneAndUpdate({ guildId: targetGuildId }, { panelTitle, panelDescription, panelBanner }, { upsert: true, new: true });
+                
                 const targetGuild = client.guilds.cache.get(targetGuildId);
-                const targetChannel = targetGuild?.channels.cache.get(targetChanId);
-                if (targetChannel) {
-                    const embed = new EmbedBuilder().setTitle(panelTitle).setDescription(panelDescription).setColor('#5865F2');
-                    if (panelBanner && panelBanner.startsWith('http')) embed.setImage(panelBanner);
-                    const options = store.categories.map(cat => ({ label: cat, value: `store_cat_${cat}` }));
-                    const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('store_category_select').setPlaceholder('🗂️ Choose Category...').addOptions(options));
-                    await targetChannel.send({ embeds: [embed], components: [row] });
+                if (targetGuild) {
+                    const targetChannel = targetGuild.channels.cache.get(targetChanId);
+                    if (targetChannel) {
+                        const embed = new EmbedBuilder().setTitle(panelTitle).setDescription(panelDescription).setColor('#5865F2');
+                        if (panelBanner && panelBanner.startsWith('http')) embed.setImage(panelBanner);
+                        const options = store.categories.map(cat => ({ label: cat, value: `store_cat_${cat}` }));
+                        const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('store_category_select').setPlaceholder('🗂️ Choose Category...').addOptions(options));
+                        await targetChannel.send({ embeds: [embed], components: [row] }).catch(() => {});
+                    }
                 }
                 return await interaction.editReply({ content: '🚀 Store deployed!' });
             }
 
             if (interaction.customId === 'modal_store_execution') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const consoleChannelId = interaction.fields.getTextInputValue('exe_console');
                 const mappingsRaw = interaction.fields.getTextInputValue('exe_cmds').split('||').map(m => m.trim());
                 const store = await GuildStore.findOne({ guildId: targetGuildId });
@@ -636,7 +632,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'modal_store_dms') {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 await GuildStore.findOneAndUpdate({ guildId: targetGuildId }, {
                     dmApproved: interaction.fields.getTextInputValue('dm_app'),
                     dmRejected: interaction.fields.getTextInputValue('dm_rej'),
@@ -646,7 +641,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId.startsWith('modal_player_checkout_')) {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 const itemUniqueId = interaction.customId.replace('modal_player_checkout_', '');
                 const buyerIGN = interaction.fields.getTextInputValue('player_ign');
                 const store = await GuildStore.findOne({ guildId });
