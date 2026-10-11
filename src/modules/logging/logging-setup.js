@@ -1,0 +1,6 @@
+import {PermissionFlagsBits as P} from "discord.js";
+import {createModuleCommand, managerOnly, denyPermission, ok, fail} from "../commandFactory.js";
+import {saveConfig} from "../shared.js";
+import {LOG_CATEGORIES} from "./services/index.js";
+
+export default createModuleCommand("logging-setup","Set the server log channel and enable event logging.",[{type:"channel",name:"channel",description:"Channel to receive audit-style bot logs",required:true,channelType:"text"}],async i=>{if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const ch=i.options.getChannel("channel",true),bot=i.guild.members.me;if(!ch?.isTextBased?.())return fail(i,"Invalid channel","Choose a text channel.");if(!bot||!ch.permissionsFor(bot)?.has([P.ViewChannel,P.SendMessages,P.EmbedLinks]))return fail(i,"Missing bot permissions","Give the bot View Channel, Send Messages and Embed Links in that channel.");await saveConfig("logging",i.guild.id,{channelId:ch.id,enabled:true,enabledEvents:[...LOG_CATEGORIES]});return ok(i,"Logging configured",`Logs will be sent to ${ch}. All seven event groups are enabled by default; use /logging-config to customize categories.`);});
