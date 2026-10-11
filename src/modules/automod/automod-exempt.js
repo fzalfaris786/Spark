@@ -1,0 +1,7 @@
+import {createModuleCommand, managerOnly, denyPermission, ok, fail} from "../commandFactory.js";
+import {saveConfig} from "../shared.js";
+import {getAutomodConfig} from "./services/index.js";
+
+export default createModuleCommand("automod-exempt","Add or remove a role or channel from AutoMod exemptions.",[
+  {type:"string",name:"operation",description:"Add or remove an exemption",required:true,choices:[{name:"Add",value:"add"},{name:"Remove",value:"remove"}]},{type:"string",name:"target_type",description:"Exemption type",required:true,choices:[{name:"Role",value:"role"},{name:"Channel",value:"channel"}]},{type:"role",name:"role",description:"Role to exempt"},{type:"channel",name:"channel",description:"Channel to exempt",channelType:"text"}
+ ],async i=>{if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const op=i.options.getString("operation",true),type=i.options.getString("target_type",true),role=i.options.getRole("role"),ch=i.options.getChannel("channel"),id=type==="role"?role?.id:ch?.id;if(!id)return fail(i,"Target required",`Choose a ${type} target matching target_type.`);const c=await getAutomodConfig(i.guild.id),field=type==="role"?"exemptRoleIds":"exemptChannelIds",set=new Set(c[field]);if(op==="add")set.add(id);else set.delete(id);await saveConfig("automod",i.guild.id,{[field]:[...set]});return ok(i,"AutoMod exemptions updated",`${op==="add"?"Added":"Removed"} ${type} exemption.`);});
