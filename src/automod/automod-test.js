@@ -1,8 +1,0 @@
-import {createModuleCommand, managerOnly, denyPermission, fail, infoEmbed, safeReply} from "../commandFactory.js";
-import {getAutomodConfig, containsInvite, hasUrl, wordViolation} from "./services/index.js";
-
-export default createModuleCommand("automod-test","Test text against configured AutoMod filters without taking action.",[{type:"string",name:"text",description:"Sample message text to test",required:true,minLength:1,maxLength:1800}],async i=>{
-   if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const c=await getAutomodConfig(i.guild.id),text=i.options.getString("text",true),hits=[];
-   if(c.blockInvites&&containsInvite(text))hits.push("Discord invite link");if(c.blockLinks&&hasUrl(text))hits.push("URL/link posting");const word=wordViolation(text,c.blockedWords);if(word)hits.push(`Blocked word: ${word}`);const userMentions=(text.match(/<@!?\d+>/g)||[]).length,roleMentions=(text.match(/<@&\d+>/g)||[]).length,everyoneMentions=/@(everyone|here)\b/i.test(text)?c.mentionLimit:0,mention=userMentions+roleMentions+everyoneMentions;if(mention>=c.mentionLimit)hits.push(`Mention spam (${mention})`);const alpha=text.replace(/[^a-z]/gi,"");if(c.capsEnabled&&alpha.length>=c.capsMinLength){const upper=[...alpha].filter(ch=>ch===ch.toUpperCase()&&ch!==ch.toLowerCase()).length;if(upper/alpha.length>=c.capsThreshold)hits.push("Excessive caps");}
-   return safeReply(i,{embeds:[infoEmbed("AutoMod test",hits.length?`Would be flagged by: **${hits.join(", ")}**. No message was deleted and no timeout was applied.`:"No configured static filter matched this text. Spam-history filters cannot be predicted from one sample.")]});
- });

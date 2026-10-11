@@ -1,5 +1,0 @@
-import {createModuleCommand, managerOnly, denyPermission, ok, fail} from "../commandFactory.js";
-import {saveConfig, cleanText} from "../shared.js";
-import {getAutomodConfig, isSafeText} from "./services/index.js";
-
-export default createModuleCommand("automod-word-add","Add a word or phrase to the blocked-word list.",[{type:"string",name:"word",description:"Word or phrase to block",required:true,minLength:1,maxLength:60}],async i=>{if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const word=cleanText(i.options.getString("word",true).toLowerCase().trim(),60);if(!isSafeText(word))return fail(i,"Invalid word","Provide a word or phrase up to 60 characters.");const c=await getAutomodConfig(i.guild.id);if(c.blockedWords.includes(word))return fail(i,"Already blocked",`${word} is already on the list.`);if(c.blockedWords.length>=100)return fail(i,"Word list full","The current limit is 100 words/phrases.");await saveConfig("automod",i.guild.id,{blockedWords:[...c.blockedWords,word]});return ok(i,"Blocked word added",`${word} will now trigger AutoMod when enabled.`);});
