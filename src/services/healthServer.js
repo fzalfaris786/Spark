@@ -1,1 +1,2 @@
-
+import http from "node:http";
+export function startHealthServer(port,isReady=()=>false){const server=http.createServer((req,res)=>{if(req.url!=="/health"&&req.url!=="/ready"){res.writeHead(404);return res.end("Not found");}const ready=req.url==="/health"||Boolean(isReady());res.writeHead(ready?200:503,{"content-type":"application/json"});res.end(JSON.stringify({status:req.url==="/health"?"alive":ready?"ready":"starting"}));});server.listen(port,"0.0.0.0",()=>console.log(`[health] Listening on ${port}`));return server;}
