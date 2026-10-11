@@ -1,0 +1,4 @@
+import {createModuleCommand, managerOnly, denyPermission, ok, fail} from "../commandFactory.js";
+import {getLoggingConfig, logEvent} from "./services/index.js";
+
+export default createModuleCommand("logging-test","Send a test log entry to the configured channel.",[],async i=>{if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const c=await getLoggingConfig(i.guild.id);if(!c.channelId)return fail(i,"Log channel not configured","Run `/logging-setup` first.");const sent=await logEvent(i.guild,"server","Test entry","This is a test log sent by a server administrator.",[{name:"Requested by",value:`${i.user} (\`${i.user.id}\`)`},{name:"Result",value:"Logging destination is reachable."}]);if(!sent)return fail(i,"Test could not be sent","Check that logging is enabled, the Server category is enabled and bot permissions are correct.");return ok(i,"Test log sent",`Check <#${c.channelId}>.`);});
