@@ -1,0 +1,4 @@
+import {createModuleCommand, managerOnly, denyPermission, fail, infoEmbed, safeReply} from "../commandFactory.js";
+import {getTicketConfig, parseTicket} from "./services/index.js";
+
+export default createModuleCommand("tickets-stats","Show current ticket counts for this server.",[],async i=>{if(!i.guild)return fail(i,"Server only","Run this command in a server.");if(!managerOnly(i))return denyPermission(i);const c=await getTicketConfig(i.guild.id);let open=0,closed=0;for(const ch of i.guild.channels.cache.values()){const t=parseTicket(ch);if(t){if(t.status==="open")open++;else closed++;}}return safeReply(i,{embeds:[infoEmbed("Ticket statistics",`Open tickets: **${open}**\nClosed ticket channels: **${closed}**\nConfigured open limit: **${c.maxOpenPerMember} per member**`,{fields:[{name:"Ticket category",value:c.categoryId?`<#${c.categoryId}>`:"Not configured"}]})]});});

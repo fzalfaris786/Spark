@@ -1,0 +1,4 @@
+import {createModuleCommand, ok, fail} from "../commandFactory.js";
+import {getTicketConfig, toSafeChannelName, parseTicket, isTicketChannel, isSupport} from "./services/index.js";
+
+export default createModuleCommand("ticket-rename","Rename the current ticket channel.",[{type:"string",name:"name",description:"New channel name",required:true,minLength:2,maxLength:90}],async i=>{if(!i.guild||!isTicketChannel(i.channel))return fail(i,"Not a ticket","Run this inside a ticket channel.");const c=await getTicketConfig(i.guild.id);if(!isSupport(i,c))return fail(i,"Staff permission required","Only support staff can rename tickets.");const name=toSafeChannelName(i.options.getString("name",true));if(!i.deferred&&!i.replied)await i.deferReply({ephemeral:true});await i.channel.setName(`${parseTicket(i.channel).status==="closed"?"closed-":""}${name}`.slice(0,100));return ok(i,"Ticket renamed",`New channel name: **${i.channel.name}**.`);});

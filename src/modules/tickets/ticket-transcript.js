@@ -1,0 +1,5 @@
+import {AttachmentBuilder} from "discord.js";
+import {createModuleCommand, fail, infoEmbed} from "../commandFactory.js";
+import {getTicketConfig, parseTicket, isTicketChannel, usageAllowed, transcriptBuffer, deliverTranscript} from "./services/index.js";
+
+export default createModuleCommand("ticket-transcript","Generate a transcript for the current ticket.",[],async i=>{if(!i.guild||!isTicketChannel(i.channel))return fail(i,"Not a ticket","Run this inside a ticket channel.");const t=parseTicket(i.channel),c=await getTicketConfig(i.guild.id);if(!usageAllowed(i,t,c))return fail(i,"Permission denied","Only the ticket creator or support staff can export this transcript.");await i.deferReply({ephemeral:true});const buffer=await transcriptBuffer(i.channel),name=`ticket-${i.channel.id}-transcript.txt`;if(c.logChannelId&&await deliverTranscript(i.channel,c,buffer,name))return i.editReply({embeds:[infoEmbed("Transcript exported",`Transcript sent to <#${c.logChannelId}>.`)]});return i.editReply({embeds:[infoEmbed("Transcript ready","The transcript is attached. It includes up to the most recent 1,000 messages.")],files:[new AttachmentBuilder(buffer,{name})]});});
