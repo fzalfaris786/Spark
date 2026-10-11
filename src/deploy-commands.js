@@ -1,0 +1,3 @@
+import {REST,Routes} from "discord.js";import {loadEnv} from "./config/env.js";import {createClient} from "./core/client.js";import {loadAllCommands} from "./handlers/commandHandler.js";
+const env=loadEnv(),client=createClient();await loadAllCommands(client);const body=[...client.slashCommands.values()].map(c=>c.data.toJSON());const rest=new REST({version:"10"}).setToken(env.botToken);
+if(env.guildId){await rest.put(Routes.applicationGuildCommands(env.clientId,env.guildId),{body});console.log(`Registered ${body.length} guild commands.`);}else{await rest.put(Routes.applicationCommands(env.clientId),{body});console.log(`Registered ${body.length} global commands; propagation may take time.`);}
