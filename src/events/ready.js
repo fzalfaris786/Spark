@@ -1,1 +1,1 @@
-
+export default {name:"ready",once:true,async execute(client){console.log(`[discord] Logged in as ${client.user.tag}`);}};
